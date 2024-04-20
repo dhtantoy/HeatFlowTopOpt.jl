@@ -1,0 +1,6 @@
+*.svg
+data/*
+log/*
+debug/*
+*.txt
+.vscode
