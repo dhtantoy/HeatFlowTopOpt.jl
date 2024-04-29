@@ -1,16 +1,12 @@
 function post_phi!(cache_Φ::Array{T1}, cache_Gτχ::Array{T2}, down::T2= typemin(T2), up::T2= typemax(T2)) where {T1, T2}
-    n_geq_1 = 0
-    n_leq_0 = 0
-    for i = eachindex(cache_Φ)
+    @inbounds for i = eachindex(cache_Φ)
         if cache_Gτχ[i] < down 
             cache_Φ[i] = typemax(T1)
-            n_leq_0 += 1
         elseif cache_Gτχ[i] > up
-            n_geq_1 += 1
             cache_Φ[i] = typemin(T1)
         end
     end
-    return n_geq_1, n_leq_0
+    return nothing
 end
 
 function iterateχ!(cache_χ, cache_Φ::Array{T}, idx_pick_post::SzVector{Int}, M= count(<(zero(T)), cache_Φ)) where {T}
@@ -20,7 +16,7 @@ function iterateχ!(cache_χ, cache_Φ::Array{T}, idx_pick_post::SzVector{Int}, 
 
     sortperm!(ix, vec(cache_Φ); alg=PartialQuickSort( Base.oneto(M) ))
 
-    for i = Base.oneto(M)
+    @inbounds for i = Base.oneto(M)
         cache_χ[ ix[i] ] = one(T)
     end
 

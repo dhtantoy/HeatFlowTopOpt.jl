@@ -1,6 +1,6 @@
 *.svg
 data/*
-log/*
+log*
 debug/*
 *.txt
 .vscode

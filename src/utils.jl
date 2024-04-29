@@ -1,40 +1,8 @@
-#######  multithread tools #######
-"""
-   realize zeros(T, len) where T = Atomic{T}
-"""
-function tzeros(::Type{T}, len) where {T}
-    v = Vector{Atomic{T}}(undef, len)
-
-    @inbounds @threads for i = eachindex(v)
-        v[i] = Atomic{T}(zero(T))
-    end
-    v
-end
+#######  division of two array with a given weight array. #######
 
 """
-update to zero(T)
+vector for efficiently pushing and resizing.
 """
-function tzeros!(v::Vector{Atomic{T}}) where T
-    @inbounds @threads for i = eachindex(v)
-        v[i][] = zero(T)
-    end
-end
-# functionlvsetindex!(v, val, i) = begin
-#     v[i][] = val
-# end
-
-"""
-translate to vector{T}
-"""
-function Base.vec(v::Vector{Atomic{T}}) where T
-    ret = Vector{T}(undef, length(v))
-    @inbounds @threads for i = eachindex(v)
-        ret[i] = v[i].value
-    end
-    ret
-end
-
-#######  division of two sets. #######
 struct SzVector{T} <: AbstractVector{T}
     sz::Base.RefValue{Int64}
     data::Vector{T}
@@ -121,17 +89,39 @@ function _check_from_until(start::Integer, v::AbstractVector{T}, x::T, Δϕ::Abs
     return false
 end
 
-Plots.heatmap(f, Ω::Triangulation) = begin
-    _compute_node_value(f, Ω) |> heatmap
-end
+# """
+# seperate dictionary according to the type of value (single or vector).
+# generate an array of single-parameter-nested dictionary. 
+# """
+# function seperate_vec_dict(dict)
 
+# end
 
-function get_avaible_port()
-    s = TCPSocket()
-    bind(s, ip"127.0.0.1", 0)
-    _, port = getsockname(s)
-    close(s)
-    return Int(port)
-end
+# """
+# collect data in data/PREFIX/jld2 to a mat file.
+# """
+# function collect_to_mat(;
+#     item= "2024-04-26T23:23:13.205", 
+#     prefix= "data",
+#     data= ["χ₀" => "chi_0", "χ" => "chi"])
+
+#     path = joinpath(prefix, item, "jld2")
+#     mat_prefix = joinpath(prefix, item, "mat")
+#     mkpath(mat_prefix)
+#     mat_file = matopen(joinpath(mat_prefix, "data.mat"), "w")
+    
+#     for file in readdir(path)[1]
+#         d = JLD2.load(joinpath(path, file))
+#         for (k, v) in data
+#             if haskey(d, k)
+#                 matwrite(joinpath(prefix, item, v), Dict(k => d[k]))
+#             end
+#         end
+#     end
+
+    
+
+# end
+
 
 

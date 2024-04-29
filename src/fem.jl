@@ -1,52 +1,82 @@
-function initmodel(N; dim= 2)
-    L = 1
+"""
+return 
+    m, lab, cache_χ, aux_space
+    (Ω, Γin, Γout, Γwall),
+    (dx, dΓin, dΓout, dΓwall)
+"""
+function initmodel(::Val{InitType}, N, dim, L) where {InitType}
 
     @info "------------- grid setting -------------"
 
-    @info @green "generating grid, qudrature and χ₀..."
+    @info "generating grid, qudrature and χ₀..."
     m = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim))|> simplexify
     lab = get_face_labeling(m)
     add_tag!(lab, "in", [7])
     add_tag!(lab, "out", [8])
     add_tag!(lab, "wall", [1, 2, 3, 4, 5, 6])
+
     Ω = Triangulation(m)
-    Γ = BoundaryTriangulation(m; tags= "in")
+    Γin = BoundaryTriangulation(m; tags= "in")
+    Γout = BoundaryTriangulation(m; tags= "out")
+    Γwall = BoundaryTriangulation(m; tags= "wall")
+
     dx = Measure(Ω, 4)
-    dσ = Measure(Γ, 4)
-    N_node = N + 1
-    χ = zeros(Float64, repeat([N_node], dim)...)
+    dΓin = Measure(Γin, 4)
+    dΓout = Measure(Γout, 4)
+    dΓwall = Measure(Γwall, 4)
 
-    n = 20
-    p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
-    map(p[2:4:end]) do I 
-        χ[:, I] .= 1
-        χ[:, end .- I] .= 1
-        χ[I, :] .= 1
-        χ[end .- I, :] .= 1
-    end
-    # χ = χ + reverse(χ, dims= 2)
-
-    heatmap(χ)
-
+    cache_χ = initchi(Val(InitType), N + 1, dim)
 
     aux_space = TestFESpace(m, ReferenceFE(lagrangian, Float64, 1); conformity=:H1)
 
     @info "-------------------------------------------"
-
-    (m, Ω, Γ, lab, dx, dσ, χ, aux_space)
+    
+    m, lab, cache_χ, aux_space,
+    (Ω, Γin, Γout, Γwall),
+    (dx, dΓin, dΓout, dΓwall)
 end
 
-function initspace(m, lab, dx; ud= VectorValue(0., 0.), Td= 0.)
+@generated function initchi(::Val{InitType}, N_node, dim, n= 20) where {InitType}
+    if InitType == :Net
+        op = quote
+            χ[I, :] .= 1
+            χ[end .- I, :] .= 1
+        end
+    elseif InitType == :Line 
+        op = :(nothing)
+    end
+
+    quote
+        χ = zeros(Float64, repeat([N_node], dim)...)
+        p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
+
+        for I in p[2:4:end]
+            χ[:, I] .= 1
+            χ[:, end .- I] .= 1
+            $op
+        end
+
+        return χ
+    end
+end
+
+"""
+return 
+    (T_test, T_trial, X, Y), 
+    (T_assem, V_assem, cache_T_b, cache_T_A, cache_V_b, cache_V_A),
+    (cache_Th, cache_Thˢ, cache_uh, cache_uhˢ)
+"""
+function initspace(m, lab, dx, ud, Td)
     @info "------------- space setting -------------"
     ref_T = ReferenceFE(lagrangian, Float64, 1)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 1)
     ref_P = ReferenceFE(lagrangian, Float64, 1)
 
-    @info @green "constructing trial and test spaces of heat equation..."
+    @info "constructing trial and test spaces of heat equation..."
     T_test = TestFESpace(m, ref_T, labels= lab; conformity= :H1, dirichlet_tags= ["in"])
     T_trial = TrialFESpace(T_test, Td)
 
-    @info @green "constructing trial and test spaces of Stoke equation..."
+    @info "constructing trial and test spaces of Stoke equation..."
     V_test = TestFESpace(m, ref_V, labels= lab; conformity= :H1, dirichlet_tags= ["wall"])
     V_trial = TrialFESpace(V_test, ud)
 
@@ -56,7 +86,7 @@ function initspace(m, lab, dx; ud= VectorValue(0., 0.), Td= 0.)
     X = MultiFieldFESpace([V_trial, P_trial])
     Y = MultiFieldFESpace([V_test, P_test])
 
-    @info @green "preparing stiffness matrix cache..."
+    @info "preparing stiffness matrix cache..."
     T_assem = SparseMatrixAssembler(T_trial, T_test)
     V_assem = SparseMatrixAssembler(X, Y)
 
@@ -72,7 +102,7 @@ function initspace(m, lab, dx; ud= VectorValue(0., 0.), Td= 0.)
     cache_V_b = allocate_vector(V_assem, (nothing, [X_cell_dof_ids]))
     cache_V_A = allocate_matrix(V_assem, ([iwq], [X_cell_dof_ids], [X_cell_dof_ids]))
 
-    @info @green "preparing cache FEFunction for Th, Thˢ, uh, uhˢ..."
+    @info "preparing cache FEFunction for Th, Thˢ, uh, uhˢ..."
     T_n = get_free_dof_ids(T_trial) |> length
     cache_Th = FEFunction(T_trial, zeros(Float64, T_n))
     cache_Thˢ = FEFunction(T_trial, zeros(Float64, T_n))
@@ -96,7 +126,9 @@ end
     return nothing
 end
 
-
+"""
+return (χ, κ, α, Gτχ)
+"""
 function _coeff_cache(cache_χ, conv, aux_space, α⁻)
     α₋ = 0.4175 * 0
     kf = 0.1624
@@ -112,12 +144,12 @@ function _coeff_cache(cache_χ, conv, aux_space, α⁻)
     return (χ, κ, α, Gτχ)
 end
 
-function fem_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces, dx, dσ, conv, δt = 8e-3)
+function pde_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces, dx, dΓin, conv)
     T_assem, V_assem, cache_T_b, cache_T_A, cache_V_b, cache_V_A = cache_fem
-    Th, _, uh, _ = cache_fefunc
     T_test, T_trial, X, Y = spaces
+    Th, _, uh, _ = cache_fefunc
     τ = conv.τ[]
-    g, β₁, β₂, β₃, N, Re, _ = params
+    g, β₁, β₂, β₃, N, Re, _, δt = params
     χ, κ, α, Gτχ = cache_coeff
 
     h = 1 / N
@@ -128,7 +160,7 @@ function fem_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces, dx, d�
     Ts = 1.
 
     a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx + ∫(∇(p)⋅∇(q)*δu)dx
-    l_V((v, q)) = ∫( g ⋅ v)dσ
+    l_V((v, q)) = ∫( g ⋅ v)dΓin
     assemble_matrix!(a_V, cache_V_A, V_assem, X, Y)
     assemble_vector!(l_V, cache_V_b, V_assem, Y)
     solver(uh.free_values.vector, cache_V_A, cache_V_b)
@@ -146,11 +178,11 @@ function fem_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces, dx, d�
 end
 
 
-function fem_adjoint_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces, dx, δt = 8e-3)
+function adjoint_pde_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces, dx)
     T_assem, V_assem, cache_T_b, cache_T_A, cache_V_b, cache_V_A = cache_fem
     Th, Thˢ, uh, uhˢ = cache_fefunc
     T_test, T_trial, X, Y = spaces
-    _..., N, Re, _ = params
+    _..., N, Re, _, δt = params
     _, κ, α, _ = cache_coeff
 
     h = 1 / N
@@ -173,68 +205,6 @@ function fem_adjoint_solve!(cache_fem, cache_fefunc, cache_coeff, params, spaces
 
     return nothing
 end
-
-
-
-"""
-fem analysis.
-"""
-# function femsolve!(cache_fem, cache_fefunc, params, spaces, aux_space, cache_χ, dx, dσ, conv, δt = 8e-3)
-#     T_assem, V_assem, cache_T_b, cache_T_A, cache_V_b, cache_V_A = cache_fem
-#     Th, Thˢ, uh, uhˢ = cache_fefunc
-#     T_test, T_trial, X, Y = spaces
-#     τ = conv.τ[]
-#     g, β₁, β₂, β₃, N = params
-
-#     h = 1 / N
-#     δt *= h^2
-#     δu = h^2
-#     α₋ = 0.4175
-#     α⁻ = 417.5
-#     Re = 5988.
-#     μ = 1/Re
-#     kf = 0.1624
-#     ks = 40.47
-#     γ = 1027.6
-#     Ts = 1.
-#     conv(cache_χ)
-#     Gτχ_arr = conv.out
-    
-#     Gτχ = FEFunction(aux_space, vec(Gτχ_arr)) 
-#     χ = FEFunction(aux_space, vec(cache_χ)) 
-#     κ = ks + (kf - ks) * Gτχ
-#     α = α⁻ + (α₋ - α⁻) * Gτχ
-    
-#     a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx + ∫(∇(p)⋅∇(q)*δu)dx
-#     l_V((v, q)) = ∫( g ⋅ v)dσ
-#     assemble_matrix!(a_V, cache_V_A, V_assem, X, Y)
-#     assemble_vector!(l_V, cache_V_b, V_assem, Y)
-#     solver(uh.free_values.vector, cache_V_A, cache_V_b)
-
-#     a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
-#     l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
-#     assemble_matrix!(a_T, cache_T_A, T_assem, T_trial, T_test)
-#     assemble_vector!(l_T, cache_T_b, T_assem, T_test)
-#     solver(Th.free_values, cache_T_A, cache_T_b)
-
-#     a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
-#     l_Tˢ(v) = ∫(- κ *γ * v)dx + ∫(κ *γ * (Re*uh⋅∇(v))*δt)dx
-#     assemble_matrix!(a_Tˢ, cache_T_A, T_assem, T_trial, T_test)
-#     assemble_vector!(l_Tˢ, cache_T_b, T_assem, T_test)
-#     solver(Thˢ.free_values, cache_T_A, cache_T_b)
-
-#     a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx + ∫(∇(pˢ)⋅∇(q)*δu)dx
-#     l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx + ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
-#     assemble_matrix!(a_Vˢ, cache_V_A, V_assem, X, Y)
-#     assemble_vector!(l_Vˢ, cache_V_b, V_assem, Y)   
-#     solver(uhˢ.free_values.vector, cache_V_A, cache_V_b)
-    
-#     Ju = β₁/2*(μ* ∫(∇(uh)⊙∇(uh))dx + ∫(α*uh⋅uh)dx) |> sum
-#     Jγ = β₂ * sqrt(π/τ) * ∫(χ * (1 - Gτχ))dx |> sum
-#     Jt = β₃* ∫((Th - Ts)*κ*γ)dx |> sum
-#     return Ju, Jγ, Jt
-# end
-
 
 
 function _compute_node_value!(cache::Matrix{T}, f, Ω::Triangulation{D}) where {T, D}
@@ -269,14 +239,13 @@ compute Phi.
 function Phi!(cache, params, cache_fefunc, Ω, conv)
     cache_Φ, cache_rev_Φ, cache_node_val = cache
     Th, Thˢ, uh, uhˢ = cache_fefunc
-    _, β₁, β₂, β₃, N, Re, α⁻ = params
+    _, β₁, β₂, β₃, N, _, α⁻, _ = params
     τ = conv.τ[]
     α₋ = 0.4175 * 0
     Ts = 1.
     kf = 0.1624
     ks = 40.47
     γ = 1027.6
-    h = 1. / N
 
     copy!(cache_Φ, conv.out)
     c = β₂ * sqrt(π / τ)
@@ -321,7 +290,7 @@ add dirichlet tag for built-in cartesian mesh.
 
         is_updated = false
 
-        for k = eachindex(face_to_vertices)
+        @inbounds for k = eachindex(face_to_vertices)
             flag = true
             v_ids = face_to_vertices[k]
             for v_id in v_ids

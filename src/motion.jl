@@ -1,8 +1,17 @@
+# ------------- domain motion with curvature -------------
+"""
+given an array, return the motion of the array.
+"""
+abstract type Motion end
+(m::Motion)(arg...) = error("method $(typeof(m)) for arguments $(arg...) is not defined.")
 
+
+## -------------- convolution --------------
 """
-convolution. Pd = (N - 1) >> 1 where N is the size of matrix accepted.
+convolution. 
+Pd = (N - 1) >> 1 where N is the size of matrix accepted.
 """
-struct Conv{T, Pd, D, Tc, Tp, Tpi}
+struct Conv{T, Pd, D, Tc, Tp, Tpi} <: Motion
     shift_gauss::Array{T}   # fft of gaussian kernel
     τ::Ref{T}               # 
     rfftA::Array{Tc, D}      # pre-allocate for rfft(A) and Rfft(A) .* shift_gauss
@@ -14,26 +23,26 @@ struct Conv{T, Pd, D, Tc, Tp, Tpi}
         @assert isodd(N) "Nx must be odd."
         @info "------------- convalution setting -------------"
         nth = min(nth, 4)
-        @info @green "setting the number of FFTW threads to $nth..."
+        @info "setting the number of FFTW threads to $nth..."
         FFTW.set_num_threads(nth)
         
         _sz = N - 1
         pdsz = _sz >> 1
 
-        @info @green "generating convalution kernel..."
+        @info "generating convalution kernel..."
         shift_gauss = conv_kernel(T, _sz, τ, Val(D))
         
         rfftA = rfft(shift_gauss)
         irfftA = similar(shift_gauss)
         out = Array{T, D}(undef, ntuple(_->N, D)...)
         
-        @info @green "planning for rfft..."
+        @info "planning for rfft..."
         P_rfft = plan_rfft(irfftA; flags= FFTW.PATIENT, timelimit= time)
 
-        @info @green "planning for irfft..."
+        @info "planning for irfft..."
         P_irfft = plan_irfft(rfftA, size(shift_gauss, 1); flags= FFTW.PATIENT, timelimit= time)
         
-        @info @green "done."
+        @info "done."
         @info "-------------------------------------------"
         new{T, pdsz, D, eltype(rfftA), typeof(P_rfft), typeof(P_irfft)}(shift_gauss, Ref(convert(T, τ)), rfftA, irfftA, out, P_rfft, P_irfft)
     end
@@ -67,7 +76,6 @@ function Base.show(io::IO, ::ExArray{T, Pd, D}) where {T, Pd, D}
     """
     print(io, str)
 end
-
 
 """
 generate convalution kernel.
@@ -171,7 +179,17 @@ function (c::Conv)(A)
     nothing
 end
 
+"""
+update the parameter τ.
+"""
 function update_tau!(conv::Conv, ratio) 
     conv.τ[] *= ratio
     conv_kernel!(conv.shift_gauss, conv.τ[])
 end
+
+
+## -------------- median filter --------------
+
+
+
+## -------------- weighted average filter --------------
