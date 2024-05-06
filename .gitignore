@@ -2,5 +2,7 @@
 data/*
 log*
 debug/*
+models/*
 *.txt
+*.vtu
 .vscode

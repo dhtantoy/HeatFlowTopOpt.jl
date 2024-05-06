@@ -17,12 +17,14 @@ using Gridap.Geometry
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.FESpaces
+import GridapGmsh: gmsh
 
 using LoopVectorization
 using Pipe
 using TensorBoardLogger
 using FFTW
 using FillArrays
+using SparseArrays
 using DataFrames
 
 export run_with_configs
@@ -30,6 +32,7 @@ export run_with_configs
 
 include("utils.jl")
 include("motion.jl")
+include("grid.jl")
 include("fem.jl")
 include("update.jl")
 include("tb.jl")
