@@ -1,37 +1,62 @@
-
-"""
-return 
-    model: grid and topology of grid;
-    motion_space: fe space based on computational domain;
-    fixed_space: fe space based on the rest domain;
-    Ω: Triangulation of model;
-    Γs: BoundaryTriangulation of model;
-    dx: Measure on Ω;
-    dΓs: Measures on Γs;
-    perm: permutation map generated from `perm_map_to_cartesian(aux_Ω)`.
-"""
-function initgmshmodel(N, L, motion_domain_tags::Vector, fixed_domain_tags::Vector, boundary_tags::Vector)
-    @info "------------- model setting -------------"
-    
-    prefix = "models"
-    mkpath(prefix)
-
-    n, r = divrem(N, 3)
-    iszero(r) || error("N should be divided by 3!")
-
-    file_path = joinpath(prefix, "N_$(N)_L_$L.msh")
-    isfile(file_path) || begin
-        @warn "file not found, creating a new one as $file_path ..."
-        createGrid(Val(2), n , L, file_path)
+struct NullTriangulation{Dc, Dp} <: Triangulation{Dc, Dp} 
+    NullTriangulation(model::DiscreteModel) = begin
+        Dp = num_point_dims(model)
+        Dc = num_cell_dims(model)
+        new{Dc, Dp}()
     end
+end
 
-    @info "import gmsh file $file_path ..."
-    model = DiscreteModelFromFile(file_path)
+struct NullFESpace{T} <: FESpace 
+    trian::T
+end
 
+struct NullFEFunction{T, DT} <: FEFunction 
+    space::T
+    domain_style::DT
+end
+
+
+Gridap.get_triangulation(ns::NullFESpace) = ns.trian
+Gridap.num_free_dofs(::NullFESpace) = 0
+Gridap.num_cells(::NullTriangulation) = 0
+Gridap.get_triangulation(nf::NullFEFunction) = get_triangulation(nf.space)
+Gridap.DomainStyle(nf::NullFEFunction) = nf.domain_style
+
+function Gridap.Triangulation(m::DiscreteModel, domain_tags::Vector)
+    return isempty(domain_tags) ? NullTriangulation(m) : Triangulation(m, tags= domain_tags)
+end
+function Gridap.FESpace(nt::NullTriangulation, arg...; kwarg...)
+    return NullFESpace(nt)
+end
+
+function Gridap.FEFunction(ns::NullFESpace, arg...; kwarg...)
+    return NullFEFunction(ns, ReferenceDomain())
+end
+
+Gridap.:+(a::FEFunction, ::NullFEFunction) = a
+Gridap.:+(::NullFEFunction, a::FEFunction) = a
+
+Gridap.:*(a::NullFEFunction, ::Number) = a
+Gridap.:*(::Number, a::NullFEFunction) = a
+
+"""
+return
+    spaces:                                                     \\
+        - motion_space: fe space based on computational domain; \\
+        - fixed_space: fe space based on the rest domain;       \\
+    trians:                                                     \\
+        - Ω: Triangulation of model;                            \\
+        - Γs: BoundaryTriangulation of model;                   \\
+    measures:                                                   \\
+        - dx: Measure on Ω;                                     \\
+        - dΓs: Measures on Γs;                                  \\
+    perm: permutation map generated from `sortperm(aux_Ω)`;     \\
+"""
+function initmodel(model::DiscreteModel, motion_domain_tags::Vector, fixed_domain_tags::Vector, boundary_tags::Vector)
     @info "generating triangulation ..."
     Ω = Triangulation(model)
-    motion_Ω = Triangulation(model, tags= motion_domain_tags)
-    fixed_Ω = Triangulation(model, tags= fixed_domain_tags)
+    motion_Ω = Triangulation(model, motion_domain_tags)
+    fixed_Ω = Triangulation(model, fixed_domain_tags)
     Γs = map(boundary_tags) do tags 
         BoundaryTriangulation(model; tags= tags)
     end 
@@ -48,71 +73,105 @@ function initgmshmodel(N, L, motion_domain_tags::Vector, fixed_domain_tags::Vect
     @info "constrcting fe space for motion and fixed domain..."
     motion_space = TestFESpace(motion_Ω, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
     fixed_space = TestFESpace(fixed_Ω, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
-
-    @info "constructing fefunction fe_χ, fe_Gτχ ..."
-    motion_cache_fe_χ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
-    motion_cache_fe_Gτχ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
-
-    return model, motion_space, fixed_space, Ω, Γs, dx, dΓs, (perm, motion_cache_fe_χ, motion_cache_fe_Gτχ)
+ 
+    return (motion_space, fixed_space), (Ω, Γs), (dx, dΓs), perm
 end
 
 """
-generate χ₀ with size `N_node` × `N_node` × ... × `N_node` and dimension `dim`.
-`InitType` could be `:Net` or `:Line`.
+return 
+    motion_cache_fe_funcs:                                      \\
+        - motion_cache_fe_χ: finite element function χ;         \\
+        - motion_cache_fe_Gτχ: finite element function Gτχ;     \\
+        - motion_cache_fe_α: finite element function of coefficient α;  \\
+        - motion_cache_fe_κ: finite element function of coefficient κ; 
 """
-function initchi(InitType, N_node, dim, n= 20)
+function initfefuncs(motion_space)
+    @info "constructing fefunction fe_χ, fe_Gτχ fe_α, fe_κ ..."
+    motion_cache_fe_χ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
+    motion_cache_fe_Gτχ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
+    motion_cache_fe_α = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
+    motion_cache_fe_κ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
+
+    return motion_cache_fe_χ, motion_cache_fe_Gτχ, motion_cache_fe_α, motion_cache_fe_κ
+end
+
+
+"""
+return
+    motion_cache_arr_χ: initialiation of χ in the form of array    \\
+        - All \\
+        - Line \\
+        - Net \\
+        - Rand \\
+    motion_cache_arr_χ₂: cache of χ₂ in the form of array;          \\
+    motion_cache_arr_Gτχ: cache of Gτχ in the form of array;        \\
+    motion_cache_arr_Gτχ₂: cache of Gτχ₂ int the form of array.     
+"""
+function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
+    dim = get_triangulation(motion_sapce) |> num_point_dims
+    np = num_free_dofs(motion_sapce)
+    N_node::Int = np ^ (1//dim)
+
     @info "------------- generate χ₀ -------------"
     if InitType == "All"
-        χ = ones(Float64, repeat([N_node], dim)...)
+        motion_cache_arr_χ = ones(Float64, repeat([N_node], dim)...)
     else
-        χ = zeros(Float64, repeat([N_node], dim)...)
+        motion_cache_arr_χ = zeros(Float64, repeat([N_node], dim)...)
+
+        n = round(Int, 50 * vol)
         p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
 
         if InitType == "Net"
             for I in p[2:4:end]
-                χ[:, I] .= 1
-                χ[:, end .- I] .= 1
-                χ[I, :] .= 1
-                χ[end .- I, :] .= 1
+                motion_cache_arr_χ[:, I] .= 1
+                motion_cache_arr_χ[:, end .- I] .= 1
+                motion_cache_arr_χ[I, :] .= 1
+                motion_cache_arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Line"
             for I in p[2:4:end]
-                χ[:, I] .= 1
-                χ[:, end .- I] .= 1
+                motion_cache_arr_χ[:, I] .= 1
+                motion_cache_arr_χ[:, end .- I] .= 1
             end
-        else 
+        elseif InitType == "Rand"
+            Random.seed!(seed)
+            N = length(motion_cache_arr_χ)
+            perm = randperm(N)
+            M = round(Int, N * vol)
+            motion_cache_arr_χ[ perm[1:M] ] .= 1
+        else
             error("InitType not defined!") |> throw
         end
     end
 
-    return χ
+    motion_cache_arr_χ₂ = similar(motion_cache_arr_χ)
+    motion_cache_arr_Gτχ = similar(motion_cache_arr_χ)
+    motion_cache_arr_Gτχ₂ = similar(motion_cache_arr_χ)
+    return motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂
 end
 
 """
-it should be overwrite with `import HeatFlowTopOpt: initspaces`, and 
 return 
-    test_spaces: vector of test spaces;
-    trial_spaces: vector of trial spaces;
-    assemblers: vector of assemblers;
-    cache_As: vector of caches for stiffness matrix;
-    cache_bs: vector of caches for R.H.S. vector.
-    cache_fe_funcs: vector of caches for FEFunction.
-    cache_ad_fe_funcs: vector of caches for adjoint FEFunction.
-
-default for heat flow problem. 
+    test_spaces: vector of test spaces;                         \\
+    trial_spaces: vector of trial spaces;                       \\
+    assemblers: vector of assemblers;                           \\
+    cache_As: vector of caches for stiffness matrix;            \\
+    cache_bs: vector of caches for R.H.S. vector.               \\
+    cache_fe_funcs: vector of caches for FEFunction.            \\
+    cache_ad_fe_funcs: vector of caches for adjoint FEFunction. 
 """
-function initspaces(model, dx, Td, ud)
+function initspaces(model, dx, Td, ud, diri_tags::Vector)
     @info "------------- space setting -------------"
     ref_T = ReferenceFE(lagrangian, Float64, 1)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 1)
     ref_P = ReferenceFE(lagrangian, Float64, 1)
 
     @info "constructing trial and test spaces of heat equation..."
-    T_test = TestFESpace(model, ref_T; conformity= :H1, dirichlet_tags= [2])
+    T_test = TestFESpace(model, ref_T; conformity= :H1, dirichlet_tags= diri_tags[1])
     T_trial = TrialFESpace(T_test, Td)
 
     @info "constructing trial and test spaces of Stoke equation..."
-    V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= [1])
+    V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= diri_tags[2])
     V_trial = TrialFESpace(V_test, ud)
 
     P_test = TestFESpace(model, ref_P; conformity= :H1, constraint= :zeromean)
@@ -133,7 +192,8 @@ function initspaces(model, dx, Td, ud)
 
     du, dp = get_trial_fe_basis(X)
     dv, dq = get_fe_basis(Y)
-    iwq = (∫(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp + ∇(dp)⋅ ∇(dq))dx)[dx.quad.trian];
+    inte = ∫(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp)dx + ∫(∇(dp)⋅ ∇(dq))dx
+    iwq = inte[dx.quad.trian];
     cache_V_b = allocate_vector(V_assem, (nothing, [X_cell_dof_ids]))
     cache_V_A = allocate_matrix(V_assem, ([iwq], [X_cell_dof_ids], [X_cell_dof_ids]))
 
@@ -156,7 +216,9 @@ function initspaces(model, dx, Td, ud)
             (cache_Thˢ, cache_uhˢ) # cache_ad_fe_funcs
 end
 
-
+"""
+lapack solver.
+"""
 @inline function solver(x, A, b)
     copy!(x, b)
     fa = lu(A)
@@ -165,24 +227,59 @@ end
 end
 
 """
-return (fe_χ, fe_κ, fe_α, fe_Gτχ)
+update 
+    motion_cache_arrs:      \\
+    - motion_cache_arr_χ    \\
+    - motion_cache_arr_χ₂   \\
+    - motion_cache_arr_Gτχ  \\
+    - motion_cache_arr_Gτχ₂ \\
+    motion_cache_fe_funcs:  \\
+    - motion_cache_fe_χ     \\
+    - motion_cache_fe_Gτχ   \\
+    - motion_cache_fe_α     \\
+    - motion_cache_fe_κ     \\
+and return 
+    fe_χ: finite function χ on the whole domain;        \\
+    fe_Gτχ: finite function Gτχ on the whole domain;    \\
+    fe_α: finite function α on the whole domain;        \\
+    fe_κ: finite function κ on the whole domain; 
+    
 """
-function _coeff_cache(cache_for_fe, fixed_fe_χ, motion_cache_χ, motion, params)
+function getcoeff!(
+    motion_cache_arrs,
+    motion_cache_fe_funcs, 
+    fixed_fe_χ,
+    motion,
+    params,
+    perm)
+
+    motion_cache_fe_χ, motion_cache_fe_Gτχ, motion_cache_fe_α, motion_cache_fe_κ = motion_cache_fe_funcs
+    motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂ = motion_cache_arrs
     α₋, α⁻, kf, ks = params
-    perm, motion_cache_fe_χ, motion_cache_fe_Gτχ = cache_for_fe
 
-    motion(motion_cache_χ)
-    motion_cache_fe_χ.free_values[perm] = motion_cache_χ
-    motion_cache_fe_Gτχ.free_values[perm] = motion.out
-    fe_Gτχ = motion_cache_fe_Gτχ + fixed_fe_χ
-    fe_χ = motion_cache_fe_χ + fixed_fe_χ
+    @tturbo @. motion_cache_arr_χ₂ = 1 - motion_cache_arr_χ
+    motion(motion_cache_arr_Gτχ, motion_cache_arr_χ)
+    motion(motion_cache_arr_Gτχ₂, motion_cache_arr_χ₂)
 
-    fe_κ = ks + (kf - ks) * fe_Gτχ
-    fe_α = α⁻ + (α₋ - α⁻) * fe_Gτχ
+    for i in eachindex(perm) 
+        p_i = perm[i]
+        motion_cache_fe_α.free_values[p_i] = α₋ * motion_cache_arr_Gτχ[i] + α⁻ * motion_cache_arr_Gτχ₂[i]
+        motion_cache_fe_κ.free_values[p_i] = kf * motion_cache_arr_Gτχ[i] + ks * motion_cache_arr_Gτχ₂[i]
+        motion_cache_fe_χ.free_values[p_i] = motion_cache_arr_χ[i]
+        motion_cache_fe_Gτχ.free_values[p_i] = motion_cache_arr_Gτχ[i]
+    end
 
-    return (fe_χ, fe_κ, fe_α, fe_Gτχ)
+    fe_χ = fixed_fe_χ + motion_cache_fe_χ
+    fe_Gτχ = fixed_fe_χ + motion_cache_fe_Gτχ
+    fe_α = fixed_fe_χ * α₋ + motion_cache_fe_α
+    fe_κ = fixed_fe_χ * kf + motion_cache_fe_κ
+
+    return fe_χ, fe_Gτχ, fe_α, fe_κ
 end
 
+"""
+solve pde and update result `cache_fe_funcs` according to ...
+"""
 function pde_solve!(
     cache_fe_funcs, 
     test_spaces, 
@@ -191,8 +288,7 @@ function pde_solve!(
     cache_bs, 
     assemblers,
     params,
-    cache_coeff,
-    motion,
+    coeffs,
     dx,
     dΓs)
     
@@ -202,11 +298,11 @@ function pde_solve!(
     cache_T_A, cache_V_A = cache_As 
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
-    χ, κ, α, Gτχ = cache_coeff
+    χ, Gτχ, α, κ = coeffs
     dΓin = dΓs[2]
 
-    g, β₁, β₂, β₃, N, Re, δt, γ, Ts = params
-    τ = motion.τ[]; h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
+    g, β₁, β₂, β₃, N, Re, δt, γ, Ts, τ = params
+    h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
     
     a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx + ∫(∇(p)⋅∇(q)*δu)dx
     l_V((v, q)) = ∫( g ⋅ v)dΓin
@@ -226,7 +322,9 @@ function pde_solve!(
     return Ju, Jγ, Jt
 end
 
-
+"""
+solve adjoint pde and update result `cache_fe_funcs` according to ...
+"""
 function adjoint_pde_solve!(
     cache_ad_fe_funcs,
     cache_fe_funcs,
@@ -236,7 +334,7 @@ function adjoint_pde_solve!(
     cache_bs,
     assemblers,
     params,
-    cache_coeff,
+    coeffs,
     dx)
 
     Thˢ, uhˢ = cache_ad_fe_funcs
@@ -246,7 +344,7 @@ function adjoint_pde_solve!(
     cache_T_A, cache_V_A = cache_As 
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
-    _, κ, α, _ = cache_coeff
+    _, _, α, κ = coeffs
     N, Re, δt, γ = params
 
     h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
@@ -267,7 +365,9 @@ function adjoint_pde_solve!(
 end
 
 """
-parallel version. but need to debug
+implementation of version when Triangulation on 
+    GridPortion: a part of the whole domain; \\
+    UnstructuredGrid: the whold domain.     \\
 """
 @generated function _compute_node_value!(cache::Matrix{T}, f, Ω::BodyFittedTriangulation{Dc, 2, Tm, Tg}) where {T, Dc, Tm, Tg}
     if Tg <: GridPortion
@@ -325,53 +425,63 @@ parallel version. but need to debug
     end
 end
 
-
-# @generated function _compute_node_value!(cache::Matrix{T}, f, Ω::BodyFittedTriangulation{Dc, 2, Tm, Tg}) where {T, Dc, Tm, Tg}
-#     quote
-#         ns = zeros(Int, size(cache))
-#         c_val = f(c_p)
-
-#         for i = eachindex(c2p)
-#             c_ini = c2p.ptrs[i]
-#             l = c2p.ptrs[i + 1] - c_ini
-#             c_ini -= one(c_ini)
-#             for j = Base.oneto(l)
-#                 c_i = c2p.data[c_ini + j]
-#                 ns[p_i] += 1
-#                 cache[p_i] += c_val[]
-#             end
-#         end
-#     end
-
-# end
-
+"""
+compute Φ, note that motion does not have linearity !!!
+it could be optimized using `perm`.
+"""
 function Phi!(
     motion_cache_Φs,
     params,
     cache_fe_funcs,
     cache_ad_fe_funcs,
     motion_space,
-    motion)
+    motion,
+    motion_cache_arr_Gτχ,
+    motion_cache_arr_Gτχ₂)
 
     cache_Φ, cache_rev_Φ, cache_node_val = motion_cache_Φs
     Th, uh = cache_fe_funcs
     Thˢ, uhˢ = cache_ad_fe_funcs
     β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ = params
-    τ = motion.τ[]
-
-    Ω = get_triangulation(motion_space)
-
-    copy!(cache_Φ, motion.out)
-    c = β₂ * sqrt(π / τ)
-    @turbo @. cache_Φ = c * (1 - 2 * cache_Φ)
-
-    # first term should be negative
-    # withou h^2
-    f = -(α⁻ - α₋)*(β₁/2 * uh⋅uh + uh⋅uhˢ) + (kf - ks)*∇(Th)⋅∇(Thˢ) + γ*(Th - Ts) * (kf - ks) *(β₃ + Thˢ)
     
-    _compute_node_value!(cache_node_val, f, Ω)
-    motion(cache_node_val)
-    @turbo cache_Φ .+= motion.out
+    τ = motion.τ[]
+    trian = get_triangulation(motion_space)
+
+    ## use cache of `cache_rev_Φ` to store result of `motion`
+    out = cache_rev_Φ
+
+    # ---------------------- compute Φ₁ - Φ₂ ----------------------
+    ## β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)
+    _compute_node_value!(cache_node_val, uh⋅uh, trian)
+    motion(out, cache_node_val)
+    @turbo @. cache_Φ = β₁/2 * (α₋ - α⁻) * out
+
+    ## β₂ * √(π/τ) * Gτ(1 - χ)
+    @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
+
+    ## β₂ * √(π/τ) * Gτχ
+    @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
+
+    ## β₃ * γ * (ks - kf) * Gτ(Ts - Th)
+    _compute_node_value!(cache_node_val, Ts - Th, trian)
+    motion(out, cache_node_val)
+    @turbo @. cache_Φ += β₃ * γ * (ks - kf) * out
+
+    ## (α₋ - α⁻) * Gτ(uh⋅uhˢ)
+    _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
+    motion(out, cache_node_val)
+    @turbo @. cache_Φ += (α₋ - α⁻) * out
+
+    ## (kf - ks) * ∇(Th)⋅∇(Thˢ)
+    _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
+    motion(out, cache_node_val)
+    @turbo @. cache_Φ += (kf - ks) * out
+
+    ## γ * (kf - ks) * Gτ((Th - Ts) * Thˢ)
+    _compute_node_value!(cache_node_val, (Th - Ts) * Thˢ, trian)
+    motion(out, cache_node_val)
+    @turbo @. cache_Φ += γ * (kf - ks) * out
+
     @turbo cache_rev_Φ .= cache_Φ
     reverse!(cache_rev_Φ, dims= 2)
     @turbo @. cache_Φ = (cache_Φ + cache_rev_Φ) / 2

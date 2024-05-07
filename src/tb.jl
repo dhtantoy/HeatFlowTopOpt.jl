@@ -10,6 +10,10 @@ function singlerun(config, vtk_prefix, tb_lg)
         correct_ratio = config["correct_ratio"]
         save_iter::Int = config["save_iter"]
         vol = config["vol"]
+        is_correct = config["is_correct"]
+        is_restart = config["is_restart"]
+        is_vol_constraint = config["is_vol_constraint"]
+        is_bdupdate = config["is_bdupdate"]
 
         # parameters corresponding to motion
         up = config["up"]
@@ -17,7 +21,6 @@ function singlerun(config, vtk_prefix, tb_lg)
         τ₀ = config["τ₀"]
         InitType = config["InitType"]
         motion_tag = config["motion_tag"]
-        
         
         # parameters corresponding to PDE
         β₁ = config["β₁"]
@@ -42,25 +45,43 @@ function singlerun(config, vtk_prefix, tb_lg)
         else
             error("motion not defined!")
         end
-    end
-    
-    # cache for χ/Gτχ in the form of array.
-    motion_cache_χ = initchi(InitType, N + 1, dim);
-    volₖ = sum(motion_cache_χ) / length(motion_cache_χ);
-    motion_cache_Gτχ = similar(motion.out);
-    τ = τ₀
-    χ₀ = copy(motion_cache_χ);
-    motion_χ_old = similar(motion_cache_χ);
 
+        τ = τ₀
+    end
+
+    # ----------------------------------- model setting -----------------------------------
     # init gmsh model
     ## "wall"-1, "inlet"-2, "outlet"-3, "block_left"-4, "block_center"-5, "block_right"-6, "body"-7
-    # cache_fe_χs = perm, motion_cache_fe_χ, motion_cache_fe_Gτχ
-    model, motion_space, fixed_space, Ω, Γs, dx, dΓs, cache_fe_χs = initgmshmodel(N, L, [5], [4, 6], [1, 2, 3])
+    # file = joinpath("models", "N_$(N)_L_$L.msh")
+    # if !isfile(file)
+    #     @assert iszero(N % 3) "N should be divided by 3."
+    #     createGrid(Val(dim), N ÷ 3, L, file)
+    # end
+    # model = DiscreteModelFromFile(file)
 
-    fixed_fe_χ = FEFunction(fixed_space, Fill(1., num_free_dofs(fixed_space)))
+    ## CartesianDiscreteModel
+    ## "inlet" - 7, "outlet" - 8, "wall" - [5, 6], "motion_domain" - ["interior"], "fixed_domain" - []
+    diri_tags = [[7], [5, 6]]
+    model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify
+
+    # bd_tag = ["wall", "inlet", "outlet"]
+    (motion_space, fixed_space), (Ω, Γs), (dx, dΓs), perm = initmodel(model, ["interior"], [], [[5, 6], 7, 8]);
+    fixed_fe_χ = FEFunction(fixed_space, Fill(1., num_free_dofs(fixed_space)));
+    # ---------------------------------------------------------------------------------------------------------
+
+    
+    # init χs and prepare cache for array.
+    motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂ = initcachechis(InitType, motion_space; vol= vol);
+    volₖ = sum(motion_cache_arr_χ) / length(motion_cache_arr_χ);
+    M = round(Int, length(motion_cache_arr_χ) * vol);
+    χ₀ = copy(motion_cache_arr_χ);
+    motion_arr_χ_old = similar(motion_cache_arr_χ);
+
+    # init fe funcs 
+    motion_cache_fe_funcs = initfefuncs(motion_space);
 
     # init spaces
-    test_spaces, trial_spaces, assemblers, cache_As, cache_bs, cache_fe_funcs, cache_ad_fe_funcs = initspaces(model, dx, Td, ud)
+    test_spaces, trial_spaces, assemblers, cache_As, cache_bs, cache_fe_funcs, cache_ad_fe_funcs = initspaces(model, dx, Td, ud, diri_tags)
     
     # allocate cache for computing nodal value and Φ
     # (cache_Φ, cache_rev_Φ, cache_node_val)
@@ -68,26 +89,26 @@ function singlerun(config, vtk_prefix, tb_lg)
     motion_cache_Φs = (motion_cache_Φ, similar(motion_cache_Φ), similar(motion_cache_Φ));
     
     @info "computing initial energy ..."
-    # return J
+    motion_cache_arrs = (motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂);
     params = (α₋, α⁻, kf, ks)
-    cache_coeff = _coeff_cache(cache_fe_χs, fixed_fe_χ, motion_cache_χ, motion, params)
+    coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm);
 
-    params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts)
+    params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts, motion.τ[])
     J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
-                params, cache_coeff, motion, dx, dΓs)
+                params, coeffs, dx, dΓs)
     E = +(J...);
 
     writevtk(Ω, joinpath(vtk_prefix, "0"); 
                 cellfields=[
                     "Th" => cache_fe_funcs[1], 
                     "uh" => cache_fe_funcs[2],
-                    "χ" => cache_coeff[1],
-                    "Gτχ" => cache_coeff[4]
+                    "χ" => coeffs[1],
+                    "Gτχ" => coeffs[2]
                 ]
             )
     
     with_logger(tb_lg) do 
-        image_χ = TBImage(motion_cache_χ, WH)
+        image_χ = TBImage(motion_cache_arr_χ, WH)
         @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E 
         @info "domain" χ= image_χ log_step_increment=0
     end
@@ -108,65 +129,72 @@ function singlerun(config, vtk_prefix, tb_lg)
         @info "iteration $(i): "
 
         time_out = time()
-        copy!(motion_χ_old, motion_cache_χ);
-        copy!(motion_cache_Gτχ, motion.out);
+        copy!(motion_arr_χ_old, motion_cache_arr_χ);
 
         params = (N, Re, δt, γ)
         adjoint_pde_solve!(cache_ad_fe_funcs, cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
-                        params, cache_coeff, dx)
+                        params, coeffs, dx)
 
         params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
-        Phi!(motion_cache_Φs, params, cache_fe_funcs, cache_ad_fe_funcs, motion_space, motion)
-        post_phi!(motion_cache_Φ, motion_cache_Gτχ, down, up)
+        Phi!(motion_cache_Φs, params, cache_fe_funcs, cache_ad_fe_funcs, motion_space, motion, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂)
+        
+        # update on the boundary
+        if is_bdupdate
+            post_phi!(motion_cache_Φ, motion_cache_arr_Gτχ, down, up)
+        end
 
-        M = count(<=(0), motion_cache_Φ)
+        # volumn constraint
+        if !is_vol_constraint
+            M = count(<=(0), motion_cache_Φ)
+        end
 
-        get_ordered_idx!(idx_exist_sort_pre, cache_val_exist, cache_idx_exist, motion_cache_χ, motion_cache_Φ);
+        get_ordered_idx!(idx_exist_sort_pre, cache_val_exist, cache_idx_exist, motion_cache_arr_χ, motion_cache_Φ);
 
-        iterateχ!(motion_cache_χ, motion_cache_Φ, idx_pick_post, M);
+        iterateχ!(motion_cache_arr_χ, motion_cache_Φ, idx_pick_post, M);
 
-        # return Th, Thˢ, uh, uhˢ, nothing/J
         params = (α₋, α⁻, kf, ks)
-        cache_coeff = _coeff_cache(cache_fe_χs, fixed_fe_χ, motion_cache_χ, motion, params)
+        coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm)
 
-        params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts)
+        params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts, motion.τ[])
         J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
-                params, cache_coeff, motion, dx, dΓs)
-        Ei = +(J...)
+                    params, coeffs, dx, dΓs)
+        Ei = +(J...);
 
         time_out = time() - time_out
         
-        # correction
         time_in = time()
         n_in_iter = 0
         err_flag_in_iter = false
-        while Ei >= E
-            n_in_iter += 1
+        
+        # correction
+        if is_correct
+            while Ei >= E
+                n_in_iter += 1
 
-            n_in_iter > 20 && error("n_in_iter too big!")
+                n_in_iter > 20 && error("n_in_iter too big!")
 
-            computeAB!(idx_decrease, idx_increase, idx_exist_sort_pre, idx_pick_post, motion_cache_Φ)
+                computeAB!(idx_decrease, idx_increase, idx_exist_sort_pre, idx_pick_post, motion_cache_Φ)
 
-            if length(idx_decrease) == 0 && length(idx_increase) == 0 
-                @info "correction failed! now restart with a smaller τ." 
-                err_flag_in_iter = true
-                break
+                if length(idx_decrease) == 0 && length(idx_increase) == 0 
+                    @info "correction failed! now restart with a smaller τ." 
+                    err_flag_in_iter = true
+                    break
+                end
+                correct!(motion_cache_arr_χ, correct_ratio, idx_decrease, idx_increase, motion_cache_Φ)
+
+                get_ordered_idx!(idx_pick_post, cache_val_exist, cache_idx_exist, motion_cache_arr_χ, motion_cache_Φ)
+                
+                params = (α₋, α⁻, kf, ks)
+                coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm)
+
+                params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts, motion.τ[])
+                J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
+                            params, coeffs, dx, dΓs)
+                Ei = +(J...)
             end
-            correct!(motion_cache_χ, correct_ratio, idx_decrease, idx_increase, motion_cache_Φ)
-
-            get_ordered_idx!(idx_pick_post, cache_val_exist, cache_idx_exist, motion_cache_χ, motion_cache_Φ)
-            
-            params = (α₋, α⁻, kf, ks)
-            cache_coeff = _coeff_cache(cache_fe_χs, fixed_fe_χ, motion_cache_χ, motion, params)
-
-            params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts)
-            J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
-                params, cache_coeff, motion, dx, dΓs)
-            Ei = +(J...)
         end
 
         τ = motion.τ[]
-
         if τ < 1e-8 
             @info "τ < 1e-8 and break iteration."
             break
@@ -174,30 +202,34 @@ function singlerun(config, vtk_prefix, tb_lg)
         
         # restar with a smaller τ
         if err_flag_in_iter
-            update_tau!(motion, ϵ_ratio);
-            # restore cache data
-            copy!(motion_cache_χ, motion_χ_old);
-            copy!(motion.out, motion_cache_Gτχ)
-            continue
+            if is_restart
+                update_tau!(motion, ϵ_ratio);
+                # restore cache data
+                copy!(motion_cache_arr_χ, motion_arr_χ_old);
+                continue
+            else
+                @info "restarting is off, now break iteration."
+                break
+            end
         end
 
         E = Ei
         time_in = time() - time_in
 
-        volₖ = sum(motion_cache_χ) / length(motion_cache_χ)
-        curϵ = norm(motion_cache_χ - motion_χ_old, 2)
+        volₖ = sum(motion_cache_arr_χ) / length(motion_cache_arr_χ)
+        curϵ = norm(motion_cache_arr_χ - motion_arr_χ_old, 2)
         @info "J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         if mod(i, save_iter) == 0 
             writevtk(Ω, joinpath(vtk_prefix, string(i)); 
                 cellfields=[
                     "Th" => cache_fe_funcs[1], 
                     "uh" => cache_fe_funcs[2],
-                    "χ" => cache_coeff[1]
+                    "χ" => coeffs[1]
                 ]
             )
         end 
         with_logger(tb_lg) do 
-            image_χ = TBImage(motion_cache_χ, WH)
+            image_χ = TBImage(motion_cache_arr_χ, WH)
             @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
             @info "domain" χ= image_χ log_step_increment=0
             @info "parameters" τ= τ  ϵ= curϵ log_step_increment=0
@@ -210,18 +242,17 @@ function singlerun(config, vtk_prefix, tb_lg)
         i += 1
     end
 
-    close(tb_lg);
     writevtk(Ω, joinpath(vtk_prefix, "result"); 
             cellfields=[
                 "Th" => cache_fe_funcs[1], 
                 "Thˢ" => cache_ad_fe_funcs[1],
                 "uh" => cache_fe_funcs[2],
                 "uhˢ" => cache_ad_fe_funcs[2],
-                "χ" => cache_coeff[1]
+                "χ" => coeffs[1]
             ]
         )
     
-    return χ₀, motion_cache_χ
+    return χ₀, motion_cache_arr_χ
 end
 
 """
@@ -307,6 +338,8 @@ function run_with_configs(vec_configs::Vector, comments)
             _file["χ"] = χ
             _file["config"] = all_config
         end
+
+        close(tb_lg);
     end
     return nothing
 end

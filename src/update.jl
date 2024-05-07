@@ -9,28 +9,28 @@ function post_phi!(cache_Φ::Array{T1}, cache_Gτχ::Array{T2}, down::T2= typemi
     return nothing
 end
 
-function iterateχ!(cache_χ, cache_Φ::Array{T}, idx_pick_post::SzVector{Int}, M= count(<(zero(T)), cache_Φ)) where {T}
+function iterateχ!(cache_χ, cache_Φ::Array{T}, idx_pick_post::SzVector{Int}, M) where {T}
     @turbo cache_χ .= zero(T)
 
     ix = idx_pick_post.data
 
     sortperm!(ix, vec(cache_Φ); alg=PartialQuickSort( Base.oneto(M) ))
+    curM = M 
 
-    @inbounds for i = Base.oneto(M)
+    val = cache_Φ[ ix[M] ]
+
+    while curM > 1 && cache_Φ[ ix[ curM ] ] ≈ val
+        curM -= 1
+    end
+
+    @inbounds for i = Base.oneto(curM)
         cache_χ[ ix[i] ] = one(T)
     end
 
-    resize!(idx_pick_post, M)
+    resize!(idx_pick_post, curM)
     nothing
 end
-# function iterateχ!(cache_χ::Array{T1}, cache_Φ::Array{T2}, cache_Gτχ::Array{T3}, down::T3, up::T3) where {T1, T2, T3}
-#     for i = eachindex(cache_χ)
-#         if down < cache_Gτχ[i] < up 
-#             cache_χ[i] = cache_Φ[i] < zero(T2) ? one(T1) : zero(T1)
-#         end
-#     end
-#     nothing
-# end
+
 
 """
 get the indices where χ=1 and then order it with value Φ

@@ -1,19 +1,7 @@
-using Distributed
+using HeatFlowTopOpt
+using Logging
 
-# # run at 138
-addprocs([
-            ("c95", 4),
-            ("c0130", 3),
-            ("c0123", 1),
-            ("c0124", 1),
-        ], 
-        tunnel= true,
-        enable_threaded_blas= true,
-        topology=:master_worker,
-        exeflags="--project"
-    )
-
-@everywhere using HeatFlowTopOpt
+lg = ConsoleLogger()
 
 vec_configs =[
     # pde parameter
@@ -30,7 +18,7 @@ vec_configs =[
     "Ts" => 1.,
     "ud⋅n" => 0.,
     "Td" => 0.0,
-    "g⋅n" => [33.5, 10., 1.],
+    "g⋅n" => 33.5,
     "Ts" => 1.,
 
     # motion paramter
@@ -43,16 +31,25 @@ vec_configs =[
     "correct_ratio" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 20., 
-    "save_iter" => 10,
+    "save_iter" => 5,
     "vol" => 0.4,
     "max_it" => 1000,
-    "InitType" => ["Net", "Line", "All"],
+    "InitType" => "Line",
+    "is_correct" => true,
+    "is_restart" => true,
+    "is_vol_constraint" => false, # if false, then set val to a scalar.
+    "is_bdupdate" => true,
 
     # model parameter
     "N" => 240, # cell
     "dim" => 2,
     "L" => 1.
 ];
-comments = "测试新的模型，不同网格类型和不同的初速度"
 
-run_with_configs(vec_configs, comments)
+## debug
+# HeatFlowTopOpt.singlerun(Dict(vec_configs), "vtk_test", lg)
+
+## run
+run_with_configs(vec_configs, "----") 
+
+

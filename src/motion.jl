@@ -11,12 +11,11 @@ abstract type Motion end
 convolution. 
 Pd = (N - 1) >> 1 where N is the size of matrix accepted.
 """
-struct Conv{T, Pd, D, Tc, Tp, Tpi} <: Motion
+struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
     shift_gauss::Array{T}   # fft of gaussian kernel
     τ::Ref{T}               # 
     rfftA::Array{Tc, D}      # pre-allocate for rfft(A) and Rfft(A) .* shift_gauss
     irfftA::Array{T, D}      # pre-allocate for irfft(...)
-    out::Array{T, D}        # pre-allocate for output result
     P_rfft::Tp              # plan for rfft
     P_irfft::Tpi            # plan for irfft
     Conv(T::Type, D::Int, N::Int, τ, nth::Int= Threads.nthreads(); time= 1) = begin
@@ -34,7 +33,6 @@ struct Conv{T, Pd, D, Tc, Tp, Tpi} <: Motion
         
         rfftA = rfft(shift_gauss)
         irfftA = similar(shift_gauss)
-        out = Array{T, D}(undef, ntuple(_->N, D)...)
         
         @info "planning for rfft..."
         P_rfft = plan_rfft(irfftA; flags= FFTW.PATIENT, timelimit= time)
@@ -44,7 +42,7 @@ struct Conv{T, Pd, D, Tc, Tp, Tpi} <: Motion
         
         @info "done."
         @info "-------------------------------------------"
-        new{T, pdsz, D, eltype(rfftA), typeof(P_rfft), typeof(P_irfft)}(shift_gauss, Ref(convert(T, τ)), rfftA, irfftA, out, P_rfft, P_irfft)
+        new{T, pdsz, D, N, eltype(rfftA), typeof(P_rfft), typeof(P_irfft)}(shift_gauss, Ref(convert(T, τ)), rfftA, irfftA, P_rfft, P_irfft)
     end
 end
 get_pdsz(::Conv{T, Pd}) where {T, Pd} = 2Pd
@@ -127,7 +125,7 @@ end
 """
 compute convolution of A, remenber to copy the c.out if another convalution need to be computed soon.
 """
-@generated function (c::Conv{T1, Pd, D})(A::ExArray{T2, Pd, D}) where {T1,T2, Pd, D}
+@generated function (c::Conv{T1, Pd, D, N})(out::Array{T1, D}, A::ExArray{T2, Pd, D}) where {T1, T2, Pd, D, N}
     # used to optimized computation
     if D == 2
         sub = quote
@@ -156,11 +154,11 @@ compute convolution of A, remenber to copy the c.out if another convalution need
     end
     
     quote
+        @assert (@nall $D d -> size(out, d) == N) "length in each dimension of out must be $N."
         shift_gauss = c.shift_gauss
         # rfftA = c.rfftA
         rfftA = c.P_rfft * A
         irfftA = c.irfftA
-        out = c.out
         # mul!(rfftA, c.P_rfft, A)
 
         @inbounds @fastmath @nloops $D i rfftA begin
@@ -173,9 +171,9 @@ compute convolution of A, remenber to copy the c.out if another convalution need
     end
 end
 
-function (c::Conv)(A)
+function (c::Conv)(out, A::Array)
     ExA = ExArray(A)
-    c(ExA)
+    c(out, ExA)
     nothing
 end
 
