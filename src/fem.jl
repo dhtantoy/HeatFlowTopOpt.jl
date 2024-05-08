@@ -118,18 +118,18 @@ function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
     else
         motion_cache_arr_χ = zeros(Float64, repeat([N_node], dim)...)
 
-        n = round(Int, 50 * vol)
+        n = 20
         p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
 
         if InitType == "Net"
-            for I in p[2:4:end]
+            for I in p[2:2:end]
                 motion_cache_arr_χ[:, I] .= 1
                 motion_cache_arr_χ[:, end .- I] .= 1
                 motion_cache_arr_χ[I, :] .= 1
                 motion_cache_arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Line"
-            for I in p[2:4:end]
+            for I in p[2:2:end]
                 motion_cache_arr_χ[:, I] .= 1
                 motion_cache_arr_χ[:, end .- I] .= 1
             end
