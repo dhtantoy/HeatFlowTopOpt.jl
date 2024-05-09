@@ -1,5 +1,7 @@
-
-function singlerun(config, vtk_prefix, tb_lg)
+"""
+simulation with on config and save the logs and results to vtk file.
+"""
+function singlerun(config, vtk_file_prefix, tb_lg)
     # parameters
     begin 
         # independent parameters
@@ -98,7 +100,7 @@ function singlerun(config, vtk_prefix, tb_lg)
                 params, coeffs, dx, dΓs)
     E = +(J...);
 
-    writevtk(Ω, joinpath(vtk_prefix, "0"); 
+    writevtk(Ω, joinpath(vtk_file_prefix, "0"); 
                 cellfields=[
                     "Th" => cache_fe_funcs[1], 
                     "uh" => cache_fe_funcs[2],
@@ -220,7 +222,7 @@ function singlerun(config, vtk_prefix, tb_lg)
         curϵ = norm(motion_cache_arr_χ - motion_arr_χ_old, 2)
         @info "J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         if mod(i, save_iter) == 0 
-            writevtk(Ω, joinpath(vtk_prefix, string(i)); 
+            writevtk(Ω, joinpath(vtk_file_prefix, string(i)); 
                 cellfields=[
                     "Th" => cache_fe_funcs[1], 
                     "uh" => cache_fe_funcs[2],
@@ -242,7 +244,7 @@ function singlerun(config, vtk_prefix, tb_lg)
         i += 1
     end
 
-    writevtk(Ω, joinpath(vtk_prefix, "result"); 
+    writevtk(Ω, joinpath(vtk_file_prefix, "result"); 
             cellfields=[
                 "Th" => cache_fe_funcs[1], 
                 "Thˢ" => cache_ad_fe_funcs[1],
@@ -256,7 +258,15 @@ function singlerun(config, vtk_prefix, tb_lg)
 end
 
 """
-run with vectors of pairs of configure.
+- parse vec_configs to a vector of configs;
+- run the `singlerun` parallelly with one of the configs; 
+- make directories: 
+    - jld2: save the results in `jld2` format; 
+    - tb: save the tensorboard logs; 
+    - vtk: save the vtk files; 
+    - config.toml: save all the configs in `toml` format; 
+    - tensorboard.sh: a script to start tensorboard; 
+    - vec_configs.jl: save the `vec_configs` code to reuse directly.
 """
 function run_with_configs(vec_configs::Vector, comments)
     idx = findfirst(((k, _),) -> k == "max_it", vec_configs)
@@ -271,7 +281,7 @@ function run_with_configs(vec_configs::Vector, comments)
 
     # data path 
     path = joinpath("data", string(now()))
-    mkpath(path)
+    make_path(path, 0o751)
 
     open(joinpath(path, "vec_configs.jl"), "w") do io
         println(io, vec_configs)
@@ -284,7 +294,10 @@ function run_with_configs(vec_configs::Vector, comments)
         "PWD" => ENV["PWD"],
         "PID" => getpid(),
         "NPROCS" => nprocs(),
-        "COMMENTS" => comments
+        "UID" => parse(Int, readchomp(`id -u`)),
+        "GID" => parse(Int, readchomp(`id -g`)),
+        "COMMENTS" => comments,
+        
     )
     open(joinpath(path, "config.toml"), "w") do io
         out = Dict(
@@ -301,26 +314,29 @@ function run_with_configs(vec_configs::Vector, comments)
 
     # tensorboard script
     tb_path_prefix = joinpath(dict_info["PWD"], path, "tb")
-    mkpath(tb_path_prefix)
+    make_path(tb_path_prefix, 0o753)
 
     sh_file_name = joinpath(path, "tensorboard.sh")
     touch(sh_file_name)
-    chmod(sh_file_name, 0o777)
+    chmod(sh_file_name, 0o755)
     open(sh_file_name, "w") do io
         println(io, "#!/bin/bash")
         println(io, "tensorboard --logdir=$(tb_path_prefix) --port=\$1 --samples_per_plugin=images=$(max_it+1)")
     end
 
     jld2_prefix = joinpath(path, "jld2")
-    mkpath(jld2_prefix)
+    make_path(jld2_prefix, 0o753)
+
+    vtk_prefix = joinpath(path, "vtk")
+    make_path(vtk_prefix, 0o753)
 
     @sync @distributed for i = eachindex(appended_config_arr)
         multi_config = Dict(appended_config_arr[i])
         all_config = merge(base_config, multi_config)
 
-        tb_file = joinpath(tb_path_prefix, "run_$i")
+        tb_file_prefix = joinpath(tb_path_prefix, "run_$i")
+        tb_lg = TBLogger(tb_file_prefix, tb_overwrite, min_level=Logging.Info)
 
-        tb_lg = TBLogger(tb_file, tb_overwrite, min_level=Logging.Info)
         if !isempty(multi_config)
             write_hparams!(tb_lg, multi_config, ["energy/E"])
         end
@@ -328,18 +344,23 @@ function run_with_configs(vec_configs::Vector, comments)
             @info "config" base=TBText(DataFrame(base_config)) log_step_increment=0
         end
 
-        vtk_prefix = joinpath(path, "vtk", "run_$i")
-        mkpath(vtk_prefix)
+        vtk_file_prefix = joinpath(vtk_prefix, "run_$i")
+        mkpath(vtk_file_prefix)
        
-        χ₀, χ = singlerun(all_config, vtk_prefix, tb_lg)
+        χ₀, χ = singlerun(all_config, vtk_file_prefix, tb_lg)
 
-        jldopen(joinpath(jld2_prefix, "run_$i.jld2"), "w") do _file
+        jld2_file = joinpath(jld2_prefix, "run_$i.jld2")
+        jldopen(jld2_file, "w") do _file
             _file["χ₀"] = χ₀
             _file["χ"] = χ
             _file["config"] = all_config
         end
 
         close(tb_lg);
+
+        chmod(tb_file_prefix, 0o777; recursive= true)
+        chmod(vtk_file_prefix, 0o777; recursive= true)
+        chmod(jld2_file, 0o777)
     end
     return nothing
 end

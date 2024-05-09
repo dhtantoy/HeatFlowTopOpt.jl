@@ -89,39 +89,8 @@ function _check_from_until(start::Integer, v::AbstractVector{T}, x::T, Δϕ::Abs
     return false
 end
 
-# """
-# seperate dictionary according to the type of value (single or vector).
-# generate an array of single-parameter-nested dictionary. 
-# """
-# function seperate_vec_dict(dict)
 
-# end
-
-# """
-# collect data in data/PREFIX/jld2 to a mat file.
-# """
-# function collect_to_mat(;
-#     item= "2024-04-26T23:23:13.205", 
-#     prefix= "data",
-#     data= ["χ₀" => "chi_0", "χ" => "chi"])
-
-#     path = joinpath(prefix, item, "jld2")
-#     mat_prefix = joinpath(prefix, item, "mat")
-#     mkpath(mat_prefix)
-#     mat_file = matopen(joinpath(mat_prefix, "data.mat"), "w")
-    
-#     for file in readdir(path)[1]
-#         d = JLD2.load(joinpath(path, file))
-#         for (k, v) in data
-#             if haskey(d, k)
-#                 matwrite(joinpath(prefix, item, v), Dict(k => d[k]))
-#             end
-#         end
-#     end
-
-    
-
-# end
-
-
-
+function make_path(path::AbstractString, mode::UInt16)
+    mkpath(path)
+    chmod(path, mode)
+end

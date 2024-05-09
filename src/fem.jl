@@ -41,16 +41,16 @@ Gridap.:*(::Number, a::NullFEFunction) = a
 
 """
 return
-    spaces:                                                     \\
-        - motion_space: fe space based on computational domain; \\
-        - fixed_space: fe space based on the rest domain;       \\
-    trians:                                                     \\
-        - Ω: Triangulation of model;                            \\
-        - Γs: BoundaryTriangulation of model;                   \\
-    measures:                                                   \\
-        - dx: Measure on Ω;                                     \\
-        - dΓs: Measures on Γs;                                  \\
-    perm: permutation map generated from `sortperm(aux_Ω)`;     \\
+- spaces: 
+    - `motion_space`: fe space based on computational domain;  
+    - `fixed_space`: fe space based on the rest domain;        
+- trians:                                                      
+    - `Ω`: Triangulation of model;                             
+    - `Γs`: BoundaryTriangulation of model;                    
+- measures:                                                    
+    - `dx`: Measure on `Ω`;                                      
+    - `dΓs`: Measures on `Γs`;                                   
+- perm: permutation map generated from `sortperm(aux_Ω)`;      
 """
 function initmodel(model::DiscreteModel, motion_domain_tags::Vector, fixed_domain_tags::Vector, boundary_tags::Vector)
     @info "generating triangulation ..."
@@ -79,11 +79,11 @@ end
 
 """
 return 
-    motion_cache_fe_funcs:                                      \\
-        - motion_cache_fe_χ: finite element function χ;         \\
-        - motion_cache_fe_Gτχ: finite element function Gτχ;     \\
-        - motion_cache_fe_α: finite element function of coefficient α;  \\
-        - motion_cache_fe_κ: finite element function of coefficient κ; 
+- motion_cache_fe_funcs:                                       
+    - `motion_cache_fe_χ`: finite element function χ;          
+    - `motion_cache_fe_Gτχ`: finite element function Gτχ;      
+    - `motion_cache_fe_α`: finite element function of coefficient α;   
+    - `motion_cache_fe_κ`: finite element function of coefficient κ; 
 """
 function initfefuncs(motion_space)
     @info "constructing fefunction fe_χ, fe_Gτχ fe_α, fe_κ ..."
@@ -98,14 +98,14 @@ end
 
 """
 return
-    motion_cache_arr_χ: initialiation of χ in the form of array    \\
-        - All \\
-        - Line \\
-        - Net \\
-        - Rand \\
-    motion_cache_arr_χ₂: cache of χ₂ in the form of array;          \\
-    motion_cache_arr_Gτχ: cache of Gτχ in the form of array;        \\
-    motion_cache_arr_Gτχ₂: cache of Gτχ₂ int the form of array.     
+- motion_cache_arr_χ: initialiation of χ in the form of array     
+    - "All"  
+    - "Line"  
+    - "Net"  
+    - "Rand"  
+- motion_cache_arr_χ₂: cache of χ₂ in the form of array;           
+- motion_cache_arr_Gτχ: cache of Gτχ in the form of array;         
+- motion_cache_arr_Gτχ₂: cache of Gτχ₂ int the form of array.     
 """
 function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
     dim = get_triangulation(motion_sapce) |> num_point_dims
@@ -152,13 +152,13 @@ end
 
 """
 return 
-    test_spaces: vector of test spaces;                         \\
-    trial_spaces: vector of trial spaces;                       \\
-    assemblers: vector of assemblers;                           \\
-    cache_As: vector of caches for stiffness matrix;            \\
-    cache_bs: vector of caches for R.H.S. vector.               \\
-    cache_fe_funcs: vector of caches for FEFunction.            \\
-    cache_ad_fe_funcs: vector of caches for adjoint FEFunction. 
+- test_spaces: vector of test spaces;                          
+- trial_spaces: vector of trial spaces;                        
+- assemblers: vector of assemblers;                            
+- cache_As: vector of caches for stiffness matrix;             
+- cache_bs: vector of caches for R.H.S. vector.                
+- cache_fe_funcs: vector of caches for FEFunction.             
+- cache_ad_fe_funcs: vector of caches for adjoint FEFunction. 
 """
 function initspaces(model, dx, Td, ud, diri_tags::Vector)
     @info "------------- space setting -------------"
@@ -228,21 +228,22 @@ end
 
 """
 update 
-    motion_cache_arrs:      \\
-    - motion_cache_arr_χ    \\
-    - motion_cache_arr_χ₂   \\
-    - motion_cache_arr_Gτχ  \\
-    - motion_cache_arr_Gτχ₂ \\
-    motion_cache_fe_funcs:  \\
-    - motion_cache_fe_χ     \\
-    - motion_cache_fe_Gτχ   \\
-    - motion_cache_fe_α     \\
-    - motion_cache_fe_κ     \\
-and return 
-    fe_χ: finite function χ on the whole domain;        \\
-    fe_Gτχ: finite function Gτχ on the whole domain;    \\
-    fe_α: finite function α on the whole domain;        \\
-    fe_κ: finite function κ on the whole domain; 
+- motion_cache_arrs:       
+    - motion_cache_arr_χ     
+    - motion_cache_arr_χ₂    
+    - motion_cache_arr_Gτχ   
+    - motion_cache_arr_Gτχ₂  
+- motion_cache_fe_funcs:   
+    - motion_cache_fe_χ      
+    - motion_cache_fe_Gτχ    
+    - motion_cache_fe_α      
+    - motion_cache_fe_κ  
+
+# return
+- fe_χ: finite function χ on the whole domain;         
+- fe_Gτχ: finite function Gτχ on the whole domain;     
+- fe_α: finite function α on the whole domain;         
+- fe_κ: finite function κ on the whole domain; 
     
 """
 function getcoeff!(
@@ -366,8 +367,8 @@ end
 
 """
 implementation of version when Triangulation on 
-    GridPortion: a part of the whole domain; \\
-    UnstructuredGrid: the whold domain.     \\
+    GridPortion: a part of the whole domain;  
+    UnstructuredGrid: the whold domain.      
 """
 @generated function _compute_node_value!(cache::Matrix{T}, f, Ω::BodyFittedTriangulation{Dc, 2, Tm, Tg}) where {T, Dc, Tm, Tg}
     if Tg <: GridPortion
