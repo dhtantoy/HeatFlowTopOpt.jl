@@ -163,7 +163,7 @@ return
 function initspaces(model, dx, Td, ud, diri_tags::Vector)
     @info "------------- space setting -------------"
     ref_T = ReferenceFE(lagrangian, Float64, 1)
-    ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 1)
+    ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
     ref_P = ReferenceFE(lagrangian, Float64, 1)
 
     @info "constructing trial and test spaces of heat equation..."
@@ -174,7 +174,7 @@ function initspaces(model, dx, Td, ud, diri_tags::Vector)
     V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= diri_tags[2])
     V_trial = TrialFESpace(V_test, ud)
 
-    P_test = TestFESpace(model, ref_P; conformity= :H1, constraint= :zeromean)
+    P_test = TestFESpace(model, ref_P; conformity= :L2, constraint= :zeromean)
     P_trial = TrialFESpace(P_test)
 
     X = MultiFieldFESpace([V_trial, P_trial])
@@ -192,7 +192,7 @@ function initspaces(model, dx, Td, ud, diri_tags::Vector)
 
     du, dp = get_trial_fe_basis(X)
     dv, dq = get_fe_basis(Y)
-    inte = ∫(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp)dx + ∫(∇(dp)⋅ ∇(dq))dx
+    inte = ∫(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp)dx # + ∫(∇(dp)⋅ ∇(dq))dx
     iwq = inte[dx.quad.trian];
     cache_V_b = allocate_vector(V_assem, (nothing, [X_cell_dof_ids]))
     cache_V_A = allocate_matrix(V_assem, ([iwq], [X_cell_dof_ids], [X_cell_dof_ids]))
@@ -305,7 +305,7 @@ function pde_solve!(
     g, β₁, β₂, β₃, N, Re, δt, γ, Ts, τ = params
     h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
     
-    a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx + ∫(∇(p)⋅∇(q)*δu)dx
+    a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
     l_V((v, q)) = ∫( g ⋅ v)dΓin
     assemble_matrix!(a_V, cache_V_A, V_assem, X, Y)
     assemble_vector!(l_V, cache_V_b, V_assem, Y)
@@ -356,8 +356,8 @@ function adjoint_pde_solve!(
     assemble_vector!(l_Tˢ, cache_T_b, T_assem, T_test)
     solver(Thˢ.free_values, cache_T_A, cache_T_b)
 
-    a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx + ∫(∇(pˢ)⋅∇(q)*δu)dx
-    l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx + ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
+    a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
+    l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
     assemble_matrix!(a_Vˢ, cache_V_A, V_assem, X, Y)
     assemble_vector!(l_Vˢ, cache_V_b, V_assem, Y)   
     solver(uhˢ.free_values.parent, cache_V_A, cache_V_b)

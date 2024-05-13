@@ -1,8 +1,7 @@
 *.svg
 data/*
 log*
-debug/*
 models/*
-*.txt
-*.vtu
 .vscode
+test*
+vtk_test

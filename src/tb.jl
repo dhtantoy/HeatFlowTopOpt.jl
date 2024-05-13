@@ -1,7 +1,7 @@
 """
 simulation with on config and save the logs and results to vtk file.
 """
-function singlerun(config, vtk_file_prefix, tb_lg)
+function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
     # parameters
     begin 
         # independent parameters
@@ -100,15 +100,6 @@ function singlerun(config, vtk_file_prefix, tb_lg)
                 params, coeffs, dx, dΓs)
     E = +(J...);
 
-    writevtk(Ω, joinpath(vtk_file_prefix, "0"); 
-                cellfields=[
-                    "Th" => cache_fe_funcs[1], 
-                    "uh" => cache_fe_funcs[2],
-                    "χ" => coeffs[1],
-                    "Gτχ" => coeffs[2]
-                ]
-            )
-    
     with_logger(tb_lg) do 
         image_χ = TBImage(motion_cache_arr_χ, WH)
         @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E 
@@ -136,6 +127,32 @@ function singlerun(config, vtk_file_prefix, tb_lg)
         params = (N, Re, δt, γ)
         adjoint_pde_solve!(cache_ad_fe_funcs, cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                         params, coeffs, dx)
+
+        # all pde solved.
+        if mod(i, save_iter) == 0 
+            Th, uh = cache_fe_funcs
+            Thˢ, uhˢ = cache_ad_fe_funcs
+            fe_χ = coeffs[1]
+            vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * "_" * string(i); 
+                cellfields=[
+                    "Th" => Th, 
+                    "uh" => uh,
+                    "Thˢ" => Thˢ,
+                    "uhˢ" => uhˢ,
+                    "χ" => fe_χ,
+                    "β₁/2 * (α₋ - α⁻) * uh⋅uh" => β₁/2 * (α₋ - α⁻) * uh⋅uh,
+                    "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
+                    "(α₋ - α⁻) * (uh⋅uhˢ)" => (α₋ - α⁻) * (uh⋅uhˢ),
+                    "(kf - ks) * ∇(Th)⋅∇(Thˢ)" => (kf - ks) * ∇(Th)⋅∇(Thˢ),
+                    "γ * (kf - ks) * (Th - Ts) * Thˢ" => γ * (kf - ks) * (Th - Ts) * Thˢ,
+                    "Φ" => β₁/2 * (α₋ - α⁻) * uh⋅uh + 
+                            β₃ * γ * (ks - kf) * (Ts - Th) + 
+                            (α₋ - α⁻) * (uh⋅uhˢ) + 
+                            (kf - ks) * ∇(Th)⋅∇(Thˢ) + 
+                            γ * (kf - ks) * (Th - Ts) * Thˢ
+                ]
+            )
+        end
 
         params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
         Phi!(motion_cache_Φs, params, cache_fe_funcs, cache_ad_fe_funcs, motion_space, motion, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂)
@@ -221,15 +238,6 @@ function singlerun(config, vtk_file_prefix, tb_lg)
         volₖ = sum(motion_cache_arr_χ) / length(motion_cache_arr_χ)
         curϵ = norm(motion_cache_arr_χ - motion_arr_χ_old, 2)
         @info "J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
-        if mod(i, save_iter) == 0 
-            writevtk(Ω, joinpath(vtk_file_prefix, string(i)); 
-                cellfields=[
-                    "Th" => cache_fe_funcs[1], 
-                    "uh" => cache_fe_funcs[2],
-                    "χ" => coeffs[1]
-                ]
-            )
-        end 
         with_logger(tb_lg) do 
             image_χ = TBImage(motion_cache_arr_χ, WH)
             @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
@@ -244,7 +252,7 @@ function singlerun(config, vtk_file_prefix, tb_lg)
         i += 1
     end
 
-    writevtk(Ω, joinpath(vtk_file_prefix, "result"); 
+    vtk_file_pvd[Float64(max_it + 1)] = createvtk(Ω, vtk_file_prefix * "_" * string(max_it + 1); 
             cellfields=[
                 "Th" => cache_fe_funcs[1], 
                 "Thˢ" => cache_ad_fe_funcs[1],
@@ -345,9 +353,9 @@ function run_with_configs(vec_configs::Vector, comments)
         end
 
         vtk_file_prefix = joinpath(vtk_prefix, "run_$i")
-        mkpath(vtk_file_prefix)
+        vtk_file_pvd = createpvd(vtk_file_prefix)
        
-        χ₀, χ = singlerun(all_config, vtk_file_prefix, tb_lg)
+        χ₀, χ = singlerun(all_config, vtk_file_prefix, vtk_file_pvd, tb_lg)
 
         jld2_file = joinpath(jld2_prefix, "run_$i.jld2")
         jldopen(jld2_file, "w") do _file
@@ -357,6 +365,7 @@ function run_with_configs(vec_configs::Vector, comments)
         end
 
         close(tb_lg);
+        savepvd(vtk_file_pvd);
 
         chmod(tb_file_prefix, 0o777; recursive= true)
         chmod(vtk_file_prefix, 0o777; recursive= true)
