@@ -1,7 +1,7 @@
 """
 simulation with on config and save the logs and results to vtk file.
 """
-function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
+function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= false)
     # parameters
     begin 
         # independent parameters
@@ -90,7 +90,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
     motion_cache_Φ = Matrix{Float64}(undef, N + 1, N + 1);
     motion_cache_Φs = (motion_cache_Φ, similar(motion_cache_Φ), similar(motion_cache_Φ));
     
-    @info "computing initial energy ..."
+    @info "run_$(run_i): computing initial energy ..."
     motion_cache_arrs = (motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂);
     params = (α₋, α⁻, kf, ks)
     coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm);
@@ -119,7 +119,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
 
     i = 1
     while i <= max_it
-        @info "iteration $(i): "
+        @info "run_$(run_i) iteration $(i): "
 
         time_out = time()
         copy!(motion_arr_χ_old, motion_cache_arr_χ);
@@ -131,14 +131,14 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
         # all pde solved.
         if mod(i, save_iter) == 0 
             Th, uh = cache_fe_funcs
-            Thˢ, uhˢ = cache_ad_fe_funcs
             fe_χ = coeffs[1]
-            vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * "_" * string(i); 
-                cellfields=[
+            if debug
+                Thˢ, uhˢ = cache_ad_fe_funcs
+                c_fs = [
                     "Th" => Th, 
-                    "uh" => uh,
-                    "Thˢ" => Thˢ,
-                    "uhˢ" => uhˢ,
+                    "uh" => uh, 
+                    "Thˢ" => Thˢ, 
+                    "uhˢ" => uhˢ, 
                     "χ" => fe_χ,
                     "β₁/2 * (α₋ - α⁻) * uh⋅uh" => β₁/2 * (α₋ - α⁻) * uh⋅uh,
                     "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
@@ -149,9 +149,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
                             β₃ * γ * (ks - kf) * (Ts - Th) + 
                             (α₋ - α⁻) * (uh⋅uhˢ) + 
                             (kf - ks) * ∇(Th)⋅∇(Thˢ) + 
-                            γ * (kf - ks) * (Th - Ts) * Thˢ
-                ]
-            )
+                            γ * (kf - ks) * (Th - Ts) * Thˢ,
+                    ]
+            else
+                c_fs = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
+            end
+            vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * "_" * string(i); cellfields= c_fs)
         end
 
         params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
@@ -195,7 +198,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
                 computeAB!(idx_decrease, idx_increase, idx_exist_sort_pre, idx_pick_post, motion_cache_Φ)
 
                 if length(idx_decrease) == 0 && length(idx_increase) == 0 
-                    @info "correction failed! now restart with a smaller τ." 
+                    @info "run_$(run_i): correction failed! now restart with a smaller τ." 
                     err_flag_in_iter = true
                     break
                 end
@@ -215,7 +218,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
 
         τ = motion.τ[]
         if τ < 1e-8 
-            @info "τ < 1e-8 and break iteration."
+            @info "run_$(run_i): τ < 1e-8 and break iteration."
             break
         end
         
@@ -227,7 +230,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
                 copy!(motion_cache_arr_χ, motion_arr_χ_old);
                 continue
             else
-                @info "restarting is off, now break iteration."
+                @info "run_$(run_i): restarting is off, now break iteration."
                 break
             end
         end
@@ -237,7 +240,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg)
 
         volₖ = sum(motion_cache_arr_χ) / length(motion_cache_arr_χ)
         curϵ = norm(motion_cache_arr_χ - motion_arr_χ_old, 2)
-        @info "J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
+        @info "run_$(run_i): J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(motion_cache_arr_χ, WH)
             @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
@@ -355,7 +358,7 @@ function run_with_configs(vec_configs::Vector, comments)
         vtk_file_prefix = joinpath(vtk_prefix, "run_$i")
         vtk_file_pvd = createpvd(vtk_file_prefix)
        
-        χ₀, χ = singlerun(all_config, vtk_file_prefix, vtk_file_pvd, tb_lg)
+        χ₀, χ = singlerun(all_config, vtk_file_prefix, vtk_file_pvd, tb_lg, i)
 
         jld2_file = joinpath(jld2_prefix, "run_$i.jld2")
         jldopen(jld2_file, "w") do _file

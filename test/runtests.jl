@@ -2,7 +2,8 @@ using HeatFlowTopOpt
 using Logging 
 using Gridap 
 
-prefix = "vtk_test/test_240"
+N = 480
+prefix = "vtk_test/test_$N"
 pvd = createpvd(prefix)
 lg = ConsoleLogger()
 
@@ -21,13 +22,13 @@ vec_configs = [
     "Ts" => 1.,
     "ud⋅n" => 0.,
     "Td" => 0.,
-    "g⋅n" => 33.5,
+    "g⋅n" => 10.,
     "Ts" => 1.,
 
     # motion paramter
     "up" => 0.95,
     "down" => 0.05,
-    "τ₀" => 3e-4,
+    "τ₀" => 1e-4,
     "motion_tag" => "conv",
 
     # top opt parameter
@@ -44,13 +45,13 @@ vec_configs = [
     "is_bdupdate" => false,
 
     # model parameter
-    "N" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "N" => N,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
 
 # debug
-HeatFlowTopOpt.singlerun(Dict(vec_configs), prefix, pvd, lg)
+HeatFlowTopOpt.singlerun(Dict(vec_configs), prefix, pvd, lg; debug= true)
 savepvd(pvd)
 
 # ## run

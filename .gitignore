@@ -3,5 +3,5 @@ data/*
 log*
 models/*
 .vscode
-test*
+test/test*
 vtk_test
