@@ -70,7 +70,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     (motion_space, fixed_space), (Ω, Γs), (dx, dΓs), perm = initmodel(model, ["interior"], [], [[5, 6], 7, 8]);
     fixed_fe_χ = FEFunction(fixed_space, Fill(1., num_free_dofs(fixed_space)));
     # ---------------------------------------------------------------------------------------------------------
-
+    
     
     # init χs and prepare cache for array.
     motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂ = initcachechis(InitType, motion_space; vol= vol);
@@ -154,7 +154,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             else
                 c_fs = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
             end
-            vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * "_" * string(i); cellfields= c_fs)
+            vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * string(i); cellfields= c_fs)
         end
 
         params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
@@ -255,7 +255,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         i += 1
     end
 
-    vtk_file_pvd[Float64(max_it + 1)] = createvtk(Ω, vtk_file_prefix * "_" * string(max_it + 1); 
+    vtk_file_pvd[Float64(max_it + 1)] = createvtk(Ω, vtk_file_prefix * string(max_it + 1); 
             cellfields=[
                 "Th" => cache_fe_funcs[1], 
                 "Thˢ" => cache_ad_fe_funcs[1],
@@ -264,7 +264,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 "χ" => coeffs[1]
             ]
         )
-    
+
     return χ₀, motion_cache_arr_χ
 end
 
@@ -341,7 +341,7 @@ function run_with_configs(vec_configs::Vector, comments)
     vtk_prefix = joinpath(path, "vtk")
     make_path(vtk_prefix, 0o753)
 
-    @sync @distributed for i = eachindex(appended_config_arr)
+    pmap(eachindex(appended_config_arr)) do i
         multi_config = Dict(appended_config_arr[i])
         all_config = merge(base_config, multi_config)
 
@@ -351,11 +351,8 @@ function run_with_configs(vec_configs::Vector, comments)
         if !isempty(multi_config)
             write_hparams!(tb_lg, multi_config, ["energy/E"])
         end
-        with_logger(tb_lg) do 
-            @info "config" base=TBText(DataFrame(base_config)) log_step_increment=0
-        end
 
-        vtk_file_prefix = joinpath(vtk_prefix, "run_$i")
+        vtk_file_prefix = joinpath(vtk_prefix, "run_$(i)_")
         vtk_file_pvd = createpvd(vtk_file_prefix)
        
         χ₀, χ = singlerun(all_config, vtk_file_prefix, vtk_file_pvd, tb_lg, i)
@@ -370,9 +367,7 @@ function run_with_configs(vec_configs::Vector, comments)
         close(tb_lg);
         savepvd(vtk_file_pvd);
 
-        chmod(tb_file_prefix, 0o777; recursive= true)
-        chmod(vtk_file_prefix, 0o777; recursive= true)
-        chmod(jld2_file, 0o777)
+        nothing
     end
     return nothing
 end
