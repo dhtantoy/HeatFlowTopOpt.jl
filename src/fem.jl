@@ -118,10 +118,9 @@ function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
     else
         motion_cache_arr_χ = zeros(Float64, repeat([N_node], dim)...)
 
-        n = 20
-        p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
-
         if InitType == "Net"
+            n = 20
+            p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:2:end]
                 motion_cache_arr_χ[:, I] .= 1
                 motion_cache_arr_χ[:, end .- I] .= 1
@@ -129,16 +128,23 @@ function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
                 motion_cache_arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Line"
+            n = 20
+            p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:2:end]
                 motion_cache_arr_χ[:, I] .= 1
                 motion_cache_arr_χ[:, end .- I] .= 1
             end
         elseif InitType == "Rand"
             Random.seed!(seed)
-            N = length(motion_cache_arr_χ)
+            m₁, m₂ = size(motion_cache_arr_χ)
+            c::Int = ceil(m₂ / 2)
+            f::Int = floor(m₂ / 2)
+            N = c * m₁
             perm = randperm(N)
             M = round(Int, N * vol)
             motion_cache_arr_χ[ perm[1:M] ] .= 1
+
+            motion_cache_arr_χ[:, c+1:end] = motion_cache_arr_χ[:, f:-1:1]
         else
             error("InitType not defined!") |> throw
         end
@@ -346,12 +352,12 @@ function adjoint_pde_solve!(
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
     _, _, α, κ = coeffs
-    N, Re, δt, γ = params
+    N, Re, δt, γ, β₃ = params
 
     h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
 
     a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
-    l_Tˢ(v) = ∫(- κ *γ * v)dx + ∫(κ *γ * (Re*uh⋅∇(v))*δt)dx
+    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
     assemble_matrix!(a_Tˢ, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_Tˢ, cache_T_b, T_assem, T_test)
     solver(Thˢ.free_values, cache_T_A, cache_T_b)
@@ -365,66 +371,44 @@ function adjoint_pde_solve!(
     return nothing
 end
 
+
 """
 implementation of version when Triangulation on 
     GridPortion: a part of the whole domain;  
-    UnstructuredGrid: the whold domain.      
+    UnstructuredGrid: the whold domain.   
+it(cell-wise) evaluates faster than that(parallelly point-wise).
 """
-@generated function _compute_node_value!(cache::Matrix{T}, f, Ω::BodyFittedTriangulation{Dc, 2, Tm, Tg}) where {T, Dc, Tm, Tg}
-    if Tg <: GridPortion
-        get_p2c = quote
-            node_to_parent_node = Ω.grid.node_to_parent_node
-            parent_p2c = get_faces(top, 0, Dc)
-            p2c = parent_p2c[node_to_parent_node] 
-        end
-        node_i = :(node_to_parent_node[i])
-    elseif Tg <: UnstructuredGrid
-        get_p2c = quote
-            p2c = get_faces(top, 0, Dc)
-        end
-        node_i = :(i)
-    else
-        error("Triangulation type not supported!")
-    end
-    
-    quote
-        model = get_background_model(Ω)
-        top = get_grid_topology(model)
-
-        c_p = get_cell_points(Triangulation(model))
-        c_val = f(c_p)
-        
-        $get_p2c # p2c
-        c2p = get_faces(top, Dc, 0)
-        # traveling vertices
-        @inbounds for i = eachindex(p2c)
-            cache[i] = zero(T)
-            c_ini = p2c.ptrs[i]
-            l = p2c.ptrs[i + 1] - c_ini
-            c_ini -= one(c_ini)
-
-            # c_ini + j is the jth cell around the ith node
-            for j = Base.oneto(l)
-                # cell index
-                c_i = p2c.data[c_ini + j]
-
-                # p_init is the index of first node of the cell `c_i`
-                p_ini = c2p.ptrs[c_i]
-                _l = c2p.ptrs[c_i + 1] - p_ini
-
-                p_ini -= one(p_ini)
-                idx = 1
-                while c2p.data[p_ini + idx] != $node_i
-                    idx += 1
-                end
-
-                cache[i] += c_val[c_i][idx]
-            end
-            cache[i] /= l
-        end
-        nothing
-    end
+function _is_portion(::BodyFittedTriangulation{Dc, 2, Tm, Tg}) where {Dc, Tm, Tg}
+    return Val(Tg <: GridPortion)
 end
+function _compute_node_value!(out, op, trian)
+    T = eltype(out)
+    Dc = num_cell_dims(trian)
+    fill!(out, zero(T))
+
+    model = get_background_model(trian)
+    top = get_grid_topology(model)
+    c_p = get_cell_points(Triangulation(model))
+    c_val = op(c_p)
+    
+    c2p = get_faces(top, Dc, 0)
+    counts = zeros(eltype(c2p.ptrs), size(out)...)
+
+    @inbounds for c_i = eachindex(c2p)
+        cache = c_val[c_i]
+        p_ini = c2p.ptrs[c_i]
+        l = c2p.ptrs[c_i + 1] - p_ini   
+        p_ini -= one(p_ini)
+        for j = Base.oneto(l)
+            p_i = c2p.data[p_ini + j]
+            out[p_i] += cache[j]
+            counts[p_i] += one(p_ini)
+        end
+    end
+    out ./= counts
+    return nothing
+end
+
 
 """
 compute Φ, note that motion does not have linearity !!!

@@ -41,7 +41,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         Td = config["Td"]
         dim = config["dim"]
         L = config["L"]
-
+        
         if motion_tag == "conv"
             motion = Conv(Float64, 2, N + 1, τ₀; time= 120);
         else
@@ -49,6 +49,18 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         τ = τ₀
+    end
+
+    # ----------------------------------- Host output -----------------------------------
+    with_logger(tb_lg) do 
+        dict_info = Dict(
+            "HOSTNAME" => ENV["HOSTNAME"],
+            "LOGNAME" => ENV["LOGNAME"],
+            "PID" => getpid(),
+            "UID" => parse(Int, readchomp(`id -u`)),
+            "GID" => parse(Int, readchomp(`id -g`)),
+        )   
+        @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
     end
 
     # ----------------------------------- model setting -----------------------------------
@@ -102,7 +114,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
     with_logger(tb_lg) do 
         image_χ = TBImage(motion_cache_arr_χ, WH)
-        @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E 
+        @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
         @info "domain" χ= image_χ log_step_increment=0
     end
 
@@ -124,7 +136,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         time_out = time()
         copy!(motion_arr_χ_old, motion_cache_arr_χ);
 
-        params = (N, Re, δt, γ)
+        params = (N, Re, δt, γ, β₃)
         adjoint_pde_solve!(cache_ad_fe_funcs, cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                         params, coeffs, dx)
 
@@ -279,16 +291,11 @@ end
     - tensorboard.sh: a script to start tensorboard; 
     - vec_configs.jl: save the `vec_configs` code to reuse directly.
 """
-function run_with_configs(vec_configs::Vector, comments)
+function run_with_configs(vec_configs, comments)
     idx = findfirst(((k, _),) -> k == "max_it", vec_configs)
     max_it = last(vec_configs[idx])
 
-    multi_config_pairs = filter(((_, v),) -> isa(v, Vector), vec_configs) 
-    single_config_pairs = filter(((_, v),) -> !isa(v, Vector), vec_configs)
-        
-    base_config = Dict(single_config_pairs)
-    broadcasted_config_pairs = map(((k, v),) -> broadcast(Pair, k, v), multi_config_pairs)
-    appended_config_arr = Iterators.product(broadcasted_config_pairs...) |> collect
+    base_config, appended_config_arr = parse_vec_configs(vec_configs)
 
     # data path 
     path = joinpath("data", string(now()))
@@ -343,7 +350,7 @@ function run_with_configs(vec_configs::Vector, comments)
 
     pmap(eachindex(appended_config_arr)) do i
         multi_config = Dict(appended_config_arr[i])
-        all_config = merge(base_config, multi_config)
+        config = merge(base_config, multi_config)
 
         tb_file_prefix = joinpath(tb_path_prefix, "run_$i")
         tb_lg = TBLogger(tb_file_prefix, tb_overwrite, min_level=Logging.Info)
@@ -355,13 +362,13 @@ function run_with_configs(vec_configs::Vector, comments)
         vtk_file_prefix = joinpath(vtk_prefix, "run_$(i)_")
         vtk_file_pvd = createpvd(vtk_file_prefix)
        
-        χ₀, χ = singlerun(all_config, vtk_file_prefix, vtk_file_pvd, tb_lg, i)
+        χ₀, χ = singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, i)
 
         jld2_file = joinpath(jld2_prefix, "run_$i.jld2")
         jldopen(jld2_file, "w") do _file
             _file["χ₀"] = χ₀
             _file["χ"] = χ
-            _file["config"] = all_config
+            _file["config"] = config
         end
 
         close(tb_lg);
@@ -370,4 +377,15 @@ function run_with_configs(vec_configs::Vector, comments)
         nothing
     end
     return nothing
+end
+
+function parse_vec_configs(vec_configs::Vector)
+    multi_config_pairs = filter(((_, v),) -> isa(v, Vector), vec_configs) 
+    single_config_pairs = filter(((_, v),) -> !isa(v, Vector), vec_configs)
+        
+    base_config = Dict(single_config_pairs)
+    broadcasted_config_pairs = map(((k, v),) -> broadcast(Pair, k, v), multi_config_pairs)
+    appended_config_arr = Iterators.product(broadcasted_config_pairs...) |> collect
+
+    return base_config, appended_config_arr
 end
