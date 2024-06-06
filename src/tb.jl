@@ -298,7 +298,7 @@ function run_with_configs(vec_configs, comments)
     base_config, appended_config_arr = parse_vec_configs(vec_configs)
 
     # data path 
-    path = joinpath("data", string(now()))
+    path = joinpath("data", Dates.format(now(), "yyyy-mm-ddTHH_MM_SS"))
     make_path(path, 0o751)
 
     open(joinpath(path, "vec_configs.jl"), "w") do io
