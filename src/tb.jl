@@ -147,21 +147,31 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             if debug
                 Thˢ, uhˢ = cache_ad_fe_funcs
                 c_fs = [
-                    "Th" => Th, 
-                    "uh" => uh, 
+                    "Th" => Th,
+                    "∇(Th)" => ∇(Th),
+                    "uh" => uh,
+                    "∇⋅uh" => divergence(uh), 
                     "Thˢ" => Thˢ, 
+                    "∇(Thˢ)" => ∇(Thˢ),
                     "uhˢ" => uhˢ, 
+                    "∇⋅uhˢ" => divergence(uhˢ),
                     "χ" => fe_χ,
-                    "β₁/2 * (α₋ - α⁻) * uh⋅uh" => β₁/2 * (α₋ - α⁻) * uh⋅uh,
-                    "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
-                    "(α₋ - α⁻) * (uh⋅uhˢ)" => (α₋ - α⁻) * (uh⋅uhˢ),
-                    "(kf - ks) * ∇(Th)⋅∇(Thˢ)" => (kf - ks) * ∇(Th)⋅∇(Thˢ),
-                    "γ * (kf - ks) * (Th - Ts) * Thˢ" => γ * (kf - ks) * (Th - Ts) * Thˢ,
-                    "Φ" => β₁/2 * (α₋ - α⁻) * uh⋅uh + 
-                            β₃ * γ * (ks - kf) * (Ts - Th) + 
-                            (α₋ - α⁻) * (uh⋅uhˢ) + 
-                            (kf - ks) * ∇(Th)⋅∇(Thˢ) + 
-                            γ * (kf - ks) * (Th - Ts) * Thˢ,
+                    "uh⋅uhˢ" => uh⋅uhˢ,
+                    "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
+                    "(Th - Ts) * Thˢ" => (Ts - Th) * Thˢ,
+                    "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
+
+                    "β₁/2 * (α⁻ - α₋) * uh⋅uh" => β₁/2 * (α⁻ - α₋) * uh⋅uh,
+                    "β₃ * γ * (kf - ks) * (Ts - Th)" => β₃ * γ * (kf - ks) * (Ts - Th),
+                    "(α⁻ - α₋) * (uh⋅uhˢ)" => (α⁻ - α₋) * (uh⋅uhˢ),
+                    "(ks - kf) * ∇(Th)⋅∇(Thˢ)" => (ks - kf) * ∇(Th)⋅∇(Thˢ),
+                    "γ * (ks - kf) * (Th - Ts) * Thˢ" => γ * (ks - kf) * (Th - Ts) * Thˢ,
+                    "γ * (ks - kf) * (Th - Ts) * (β₃ + Thˢ)" => γ * (ks - kf) * (Th - Ts) * (β₃ + Thˢ),
+                    "Φ" => β₁/2 * (α⁻ - α₋) * uh⋅uh + 
+                            β₃ * γ * (kf - ks) * (Ts - Th) + 
+                            (α⁻ - α₋) * (uh⋅uhˢ) + 
+                            (ks - kf) * ∇(Th)⋅∇(Thˢ) + 
+                            γ * (ks - kf) * (Th - Ts) * Thˢ,
                     ]
             else
                 c_fs = ["Th" => Th, "uh" => uh, "χ" => fe_χ]

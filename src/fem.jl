@@ -270,8 +270,8 @@ function getcoeff!(
 
     for i in eachindex(perm) 
         p_i = perm[i]
-        motion_cache_fe_α.free_values[p_i] = α₋ * motion_cache_arr_Gτχ[i] + α⁻ * motion_cache_arr_Gτχ₂[i]
-        motion_cache_fe_κ.free_values[p_i] = kf * motion_cache_arr_Gτχ[i] + ks * motion_cache_arr_Gτχ₂[i]
+        motion_cache_fe_α.free_values[p_i] = α⁻ * motion_cache_arr_Gτχ[i] + α₋ * motion_cache_arr_Gτχ₂[i]
+        motion_cache_fe_κ.free_values[p_i] = ks * motion_cache_arr_Gτχ[i] + kf * motion_cache_arr_Gτχ₂[i]
         motion_cache_fe_χ.free_values[p_i] = motion_cache_arr_χ[i]
         motion_cache_fe_Gτχ.free_values[p_i] = motion_cache_arr_Gτχ[i]
     end
@@ -436,10 +436,10 @@ function Phi!(
     out = cache_rev_Φ
 
     # ---------------------- compute Φ₁ - Φ₂ ----------------------
-    ## β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)
+    ## β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)
     _compute_node_value!(cache_node_val, uh⋅uh, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ = β₁/2 * (α₋ - α⁻) * out
+    @turbo @. cache_Φ = β₁/2 * (α⁻ - α₋) * out
 
     ## β₂ * √(π/τ) * Gτ(1 - χ)
     @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
@@ -447,25 +447,25 @@ function Phi!(
     ## β₂ * √(π/τ) * Gτχ
     @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
 
-    ## β₃ * γ * (ks - kf) * Gτ(Ts - Th)
+    ## β₃ * γ * (kf - ks) * Gτ(Ts - Th)
     _compute_node_value!(cache_node_val, Ts - Th, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += β₃ * γ * (ks - kf) * out
+    @turbo @. cache_Φ += β₃ * γ * (kf - ks) * out
 
-    ## (α₋ - α⁻) * Gτ(uh⋅uhˢ)
+    ## (α⁻ - α₋) * Gτ(uh⋅uhˢ)
     _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += (α₋ - α⁻) * out
+    @turbo @. cache_Φ += (α⁻ - α₋) * out
 
-    ## (kf - ks) * ∇(Th)⋅∇(Thˢ)
+    ## (ks - kf) * ∇(Th)⋅∇(Thˢ)
     _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += (kf - ks) * out
+    @turbo @. cache_Φ += (ks - kf) * out
 
-    ## γ * (kf - ks) * Gτ((Th - Ts) * Thˢ)
+    ## γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)
     _compute_node_value!(cache_node_val, (Th - Ts) * Thˢ, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += γ * (kf - ks) * out
+    @turbo @. cache_Φ += γ * (ks - kf) * out
 
     @turbo cache_rev_Φ .= cache_Φ
     reverse!(cache_rev_Φ, dims= 2)
