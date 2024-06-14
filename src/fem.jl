@@ -317,8 +317,8 @@ function pde_solve!(
     assemble_vector!(l_V, cache_V_b, V_assem, Y)
     solver(uh.free_values.parent, cache_V_A, cache_V_b)
 
-    a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
-    l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
+    a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt*(1-Gτχ)))dx
+    l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt*(1-Gτχ))dx
     assemble_matrix!(a_T, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_T, cache_T_b, T_assem, T_test)
     solver(Th.free_values, cache_T_A, cache_T_b)
@@ -356,8 +356,8 @@ function adjoint_pde_solve!(
 
     h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
 
-    a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
-    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
+    a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt*(1-Gτχ))dx 
+    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt*(1-Gτχ))dx
     assemble_matrix!(a_Tˢ, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_Tˢ, cache_T_b, T_assem, T_test)
     solver(Thˢ.free_values, cache_T_A, cache_T_b)
