@@ -351,7 +351,7 @@ function adjoint_pde_solve!(
     cache_T_A, cache_V_A = cache_As 
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
-    _, _, α, κ = coeffs
+    _, Gτχ, α, κ = coeffs
     N, Re, δt, γ, β₃ = params
 
     h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
