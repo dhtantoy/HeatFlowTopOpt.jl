@@ -54,12 +54,15 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # ----------------------------------- Host output -----------------------------------
     with_logger(tb_lg) do 
         dict_info = Dict(
-            "HOSTNAME" => ENV["HOSTNAME"],
             "LOGNAME" => ENV["LOGNAME"],
             "PID" => getpid(),
             "UID" => parse(Int, readchomp(`id -u`)),
             "GID" => parse(Int, readchomp(`id -g`)),
         )   
+        try 
+            push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
+        catch
+        end
         @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
     end
 
@@ -317,7 +320,6 @@ function run_with_configs(vec_configs, comments)
     
     # info
     dict_info = Dict(
-        "HOSTNAME" => ENV["HOSTNAME"],
         "LOGNAME" => ENV["LOGNAME"],
         "PWD" => ENV["PWD"],
         "PID" => getpid(),
@@ -327,6 +329,12 @@ function run_with_configs(vec_configs, comments)
         "COMMENTS" => comments,
         
     )
+    try 
+        push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
+    catch 
+    end
+
+
     open(joinpath(path, "config.toml"), "w") do io
         out = Dict(
             "info" => dict_info,
