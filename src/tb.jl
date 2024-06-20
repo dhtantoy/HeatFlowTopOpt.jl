@@ -11,6 +11,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         ϵ_ratio = config["ϵ_ratio"] 
         correct_ratio = config["correct_ratio"]
         save_iter::Int = config["save_iter"]
+        save_start::Int = config["save_start"]
         vol = config["vol"]
         is_correct = config["is_correct"]
         is_restart = config["is_restart"]
@@ -110,7 +111,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     params = (α₋, α⁻, kf, ks)
     coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm);
 
-    params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts, motion.τ[])
+    cur_δt = δt*(1 - coeffs[2])
+    params = (g, β₁, β₂, β₃, N, Re, cur_δt, γ, Ts, motion.τ[])
     J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                 params, coeffs, dx, dΓs)
     E = +(J...);
@@ -139,12 +141,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         time_out = time()
         copy!(motion_arr_χ_old, motion_cache_arr_χ);
 
-        params = (N, Re, δt, γ, β₃)
+        cur_δt = δt*(1 - coeffs[2])
+        params = (N, Re, cur_δt, γ, β₃)
         adjoint_pde_solve!(cache_ad_fe_funcs, cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                         params, coeffs, dx)
 
         # all pde solved.
-        if mod(i, save_iter) == 0 
+        if i >= save_start && mod(i, save_iter) == 0
             Th, uh = cache_fe_funcs
             fe_χ = coeffs[1]
             if debug
@@ -159,6 +162,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "uhˢ" => uhˢ, 
                     "∇⋅uhˢ" => divergence(uhˢ),
                     "χ" => fe_χ,
+                    "δt" => cur_δt,
                     "uh⋅uhˢ" => uh⋅uhˢ,
                     "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
                     "(Th - Ts) * Thˢ" => (Ts - Th) * Thˢ,
@@ -202,7 +206,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         params = (α₋, α⁻, kf, ks)
         coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm)
 
-        params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts, motion.τ[])
+        cur_δt = δt*(1 - coeffs[2])
+        params = (g, β₁, β₂, β₃, N, Re, cur_δt, γ, Ts, motion.τ[])
         J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                     params, coeffs, dx, dΓs)
         Ei = +(J...);
@@ -234,7 +239,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 params = (α₋, α⁻, kf, ks)
                 coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm)
 
-                params = (g, β₁, β₂, β₃, N, Re, δt, γ, Ts, motion.τ[])
+                cur_δt = δt*(1 - coeffs[2])
+                params = (g, β₁, β₂, β₃, N, Re, cur_δt, γ, Ts, motion.τ[])
                 J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                             params, coeffs, dx, dΓs)
                 Ei = +(J...)
