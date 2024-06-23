@@ -45,6 +45,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         
         if motion_tag == "conv"
             motion = Conv(Float64, 2, N + 1, τ₀; time= 120);
+        elseif motion_tag == "gf"
+            pdsz = config["pdsz"]
+            motion = GaussianFilter(Float64, 2, N + 1, τ₀; pdsz= pdsz)
         else
             error("motion not defined!")
         end

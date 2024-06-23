@@ -26,7 +26,8 @@ vec_configs = [
     "up" => 0.95,
     "down" => 0.05,
     "τ₀" => 7e-4,
-    "motion_tag" => "conv",
+    "motion_tag" => "gf", # conv
+    "pdsz" => 1,
 
     # top opt parameter
     "correct_ratio" => 0.5,

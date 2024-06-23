@@ -12,7 +12,7 @@ convolution.
 Pd = (N - 1) >> 1 where N is the size of matrix accepted.
 """
 struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
-    shift_gauss::Array{T}   # fft of gaussian kernel
+    shift_gauss::Array{T, D}   # fft of gaussian kernel
     τ::Ref{T}               # 
     rfftA::Array{Tc, D}      # pre-allocate for rfft(A) and Rfft(A) .* shift_gauss
     irfftA::Array{T, D}      # pre-allocate for irfft(...)
@@ -47,7 +47,6 @@ struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
 end
 get_pdsz(::Conv{T, Pd}) where {T, Pd} = 2Pd
 get_kernel(c::Conv) = c.shift_gauss
-get_kernel_updata_method(::Conv) = conv_kernel!
 
 """
 Pd denotes padding size. Pd = (N - 1) >> 1 where N is the size of Matrix accepted.
@@ -183,6 +182,7 @@ update the parameter τ.
 function update_tau!(conv::Conv, ratio) 
     conv.τ[] *= ratio
     conv_kernel!(conv.shift_gauss, conv.τ[])
+    return nothing
 end
 
 
@@ -191,3 +191,74 @@ end
 
 
 ## -------------- weighted average filter --------------
+struct GaussianFilter{T, D} <: Motion
+    kernel::Array{T, D}
+    origin::CartesianIndex{D}
+    τ::Ref{T}
+    N::Int
+    GaussianFilter(T::Type, D::Int, N::Int, τ; pdsz::Int= 1) = begin
+        k = gaussian_kernel(T, N, pdsz, τ)
+        o = CartesianIndex(ntuple(_ -> pdsz, D)...)
+        new{T, D}(k, o, τ, N)
+    end
+end
+
+function gaussian_kernel(T::Type, N::Int, pdsz::Int, τ)
+    sz = 2pdsz + one(pdsz)
+    A = Array{T}(undef, sz, sz)
+    gaussian_kernel!(A, N, pdsz, τ)
+
+    return A
+end
+
+function gaussian_kernel!(A::Array, N::Int, pdsz::Int, τ)
+    τ̂ = N^2 * τ
+    li = -pdsz:pdsz
+    for i = eachindex(li)
+        xi = li[i]
+        for j = eachindex(li)
+            xj = li[j]
+            A[i, j] = exp( -(xi^2 + xj^2)/τ ) / (π * τ̂)
+        end
+    end
+    A ./= sum(A)
+    nothing
+end
+function Base.show(io::IO, ::GaussianFilter{T, D}) where {T, D}
+    str = """
+    self-defined Gaussian Filter.
+    """
+    print(io, str)
+end
+get_pdsz(gf::GaussianFilter) = size(gf.kernel, 1) ÷ 2
+get_kernel(gf::GaussianFilter) = gf.kernel
+"""
+update the parameter τ.
+"""
+function update_tau!(gf::GaussianFilter, ratio) 
+    gf.τ[] *= ratio
+    pdsz = get_pdsz(gf)
+    gaussian_kernel!(gf.kernel, gf.N, pdsz, gf.τ[])
+    return nothing
+end
+
+function (gf::GaussianFilter{T, 2})(out, A::Matrix) where T
+    m, n = size(out)
+    kernel = gf.kernel
+    @tturbo for J1 = axes(out, 1)
+        for J2 = axes(out, 2)
+            temp = zero(T)
+            for I1 = axes(kernel, 1)
+                for I2 = axes(kernel, 2)
+                    i = I1 + J1 - 2
+                    j = I2 + J2 - 2
+                    _i = ifelse(i < 1, 1, 0) + ifelse(1 <= i <= m, i, 0) + ifelse(i > m, m, 0)
+                    _j = ifelse(j < 1, 1, 0) + ifelse(1 <= j <= n, j, 0) + ifelse(j > n, n, 0)
+                    temp += A[_i, _j] * kernel[I1, I2]
+                end
+            end
+            out[J1, J2] = temp
+        end
+    end
+    return nothing
+end
