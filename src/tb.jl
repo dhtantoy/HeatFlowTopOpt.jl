@@ -147,10 +147,15 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                         params, coeffs, dx)
 
         # all pde solved.
+        params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
+        Phi!(motion_cache_Φs, params, cache_fe_funcs, cache_ad_fe_funcs, motion_space, motion, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂)
+
         if i >= save_start && mod(i, save_iter) == 0
             Th, uh = cache_fe_funcs
             fe_χ = coeffs[1]
             if debug
+                # only support for uniform mesh grids.
+                Φ = FEFunction(get_fe_space(fe_χ), vec(motion_cache_Φ))
                 Thˢ, uhˢ = cache_ad_fe_funcs
                 c_fs = [
                     "Th" => Th,
@@ -162,6 +167,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "uhˢ" => uhˢ, 
                     "∇⋅uhˢ" => divergence(uhˢ),
                     "χ" => fe_χ,
+                    "Φ" => Φ,
                     "δt" => cur_δt,
                     "uh⋅uhˢ" => uh⋅uhˢ,
                     "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
@@ -174,7 +180,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "(ks - kf) * ∇(Th)⋅∇(Thˢ)" => (ks - kf) * ∇(Th)⋅∇(Thˢ),
                     "γ * (ks - kf) * (Th - Ts) * Thˢ" => γ * (ks - kf) * (Th - Ts) * Thˢ,
                     "γ * (ks - kf) * (Th - Ts) * (β₃ + Thˢ)" => γ * (ks - kf) * (Th - Ts) * (β₃ + Thˢ),
-                    "Φ" => β₁/2 * (α⁻ - α₋) * uh⋅uh + 
+                    "Φ̂" => β₁/2 * (α⁻ - α₋) * uh⋅uh + 
                             β₃ * γ * (kf - ks) * (Ts - Th) + 
                             (α⁻ - α₋) * (uh⋅uhˢ) + 
                             (ks - kf) * ∇(Th)⋅∇(Thˢ) + 
@@ -186,8 +192,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * string(i); cellfields= c_fs)
         end
 
-        params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
-        Phi!(motion_cache_Φs, params, cache_fe_funcs, cache_ad_fe_funcs, motion_space, motion, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂)
         
         # update on the boundary
         if is_bdupdate
