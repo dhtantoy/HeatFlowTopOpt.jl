@@ -157,8 +157,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             Th, uh = cache_fe_funcs
             fe_χ = coeffs[1]
             if debug
+                params = (β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ)
+                ret = Phi_debug(motion_cache_Φs, params, cache_fe_funcs, cache_ad_fe_funcs, motion_space, motion, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂)
+
                 # only support for uniform mesh grids.
-                Φ = FEFunction(get_fe_space(fe_χ), vec(motion_cache_Φ))
+                V = get_fe_space(fe_χ)
+                Φ = FEFunction(V, vec(motion_cache_Φ))
                 Thˢ, uhˢ = cache_ad_fe_funcs
                 c_fs = [
                     "Th" => Th,
@@ -178,11 +182,20 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
 
                     "β₁/2 * (α⁻ - α₋) * uh⋅uh" => β₁/2 * (α⁻ - α₋) * uh⋅uh,
+                    "β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)" => FEFunction(V, ret[1]),
+
                     "β₃ * γ * (kf - ks) * (Ts - Th)" => β₃ * γ * (kf - ks) * (Ts - Th),
+                    "β₃ * γ * (kf - ks) * Gτ(Ts - Th)" => FEFunction(V, ret[4]),
+
                     "(α⁻ - α₋) * (uh⋅uhˢ)" => (α⁻ - α₋) * (uh⋅uhˢ),
+                    "(α⁻ - α₋) * Gτ(uh⋅uhˢ)" => FEFunction(V, ret[5]),
+
                     "(ks - kf) * ∇(Th)⋅∇(Thˢ)" => (ks - kf) * ∇(Th)⋅∇(Thˢ),
+                    "(ks - kf) * Gτ(∇T⋅∇Tˢ)" => FEFunction(V, ret[6]),
+
                     "γ * (ks - kf) * (Th - Ts) * Thˢ" => γ * (ks - kf) * (Th - Ts) * Thˢ,
-                    "γ * (ks - kf) * (Th - Ts) * (β₃ + Thˢ)" => γ * (ks - kf) * (Th - Ts) * (β₃ + Thˢ),
+                    "γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)" => FEFunction(V, ret[7]),
+                    
                     "Φ̂" => β₁/2 * (α⁻ - α₋) * uh⋅uh + 
                             β₃ * γ * (kf - ks) * (Ts - Th) + 
                             (α⁻ - α₋) * (uh⋅uhˢ) + 

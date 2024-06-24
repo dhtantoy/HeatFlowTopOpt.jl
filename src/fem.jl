@@ -444,8 +444,8 @@ function Phi!(
     ## β₂ * √(π/τ) * Gτ(1 - χ)
     @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
 
-    ## β₂ * √(π/τ) * Gτχ
-    @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
+    ## - β₂ * √(π/τ) * Gτχ
+    @turbo @. cache_Φ -= β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
 
     ## β₃ * γ * (kf - ks) * Gτ(Ts - Th)
     _compute_node_value!(cache_node_val, Ts - Th, trian)
@@ -457,7 +457,7 @@ function Phi!(
     motion(out, cache_node_val)
     @turbo @. cache_Φ += (α⁻ - α₋) * out
 
-    ## (ks - kf) * ∇(Th)⋅∇(Thˢ)
+    ## (ks - kf) * Gτ(∇T⋅∇Tˢ)
     _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
     motion(out, cache_node_val)
     @turbo @. cache_Φ += (ks - kf) * out
@@ -471,6 +471,63 @@ function Phi!(
     reverse!(cache_rev_Φ, dims= 2)
     @turbo @. cache_Φ = (cache_Φ + cache_rev_Φ) / 2
     nothing
+end
+
+function Phi_debug(
+    motion_cache_Φs,
+    params,
+    cache_fe_funcs,
+    cache_ad_fe_funcs,
+    motion_space,
+    motion,
+    motion_cache_arr_Gτχ,
+    motion_cache_arr_Gτχ₂)
+
+    cache_Φ, cache_rev_Φ, cache_node_val = motion_cache_Φs
+    Th, uh = cache_fe_funcs
+    Thˢ, uhˢ = cache_ad_fe_funcs
+    β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ = params
+    
+    τ = motion.τ[]
+    trian = get_triangulation(motion_space)
+
+    ## use cache of `cache_rev_Φ` to store result of `motion`
+    out = cache_rev_Φ
+
+    # ---------------------- compute Φ₁ - Φ₂ ----------------------
+    ## β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)
+    _compute_node_value!(cache_node_val, uh⋅uh, trian)
+    motion(out, cache_node_val)
+    ret1 = β₁/2 * (α⁻ - α₋) * out
+
+
+    ## β₂ * √(π/τ) * Gτ(1 - χ)
+    ret2 = β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
+
+    ## - β₂ * √(π/τ) * Gτχ
+    ret3 = β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
+
+    ## β₃ * γ * (kf - ks) * Gτ(Ts - Th)
+    _compute_node_value!(cache_node_val, Ts - Th, trian)
+    motion(out, cache_node_val)
+    ret4 = β₃ * γ * (kf - ks) * out
+
+    ## (α⁻ - α₋) * Gτ(uh⋅uhˢ)
+    _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
+    motion(out, cache_node_val)
+    ret5 = (α⁻ - α₋) * out
+
+    ## (ks - kf) * Gτ(∇T⋅∇Tˢ)
+    _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
+    motion(out, cache_node_val)
+    ret6 = (ks - kf) * out
+
+    ## γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)
+    _compute_node_value!(cache_node_val, (Th - Ts) * Thˢ, trian)
+    motion(out, cache_node_val)
+    ret7 = γ * (ks - kf) * out
+
+    return ret1, ret2, ret3, ret4, ret5, ret6, ret7
 end
 
 """
