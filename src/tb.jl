@@ -182,19 +182,19 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
 
                     "β₁/2 * (α⁻ - α₋) * uh⋅uh" => β₁/2 * (α⁻ - α₋) * uh⋅uh,
-                    "β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)" => FEFunction(V, ret[1]),
+                    "β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)" => FEFunction(V, vec(ret[1])),
 
                     "β₃ * γ * (kf - ks) * (Ts - Th)" => β₃ * γ * (kf - ks) * (Ts - Th),
-                    "β₃ * γ * (kf - ks) * Gτ(Ts - Th)" => FEFunction(V, ret[4]),
+                    "β₃ * γ * (kf - ks) * Gτ(Ts - Th)" => FEFunction(V, vec(ret[4])),
 
                     "(α⁻ - α₋) * (uh⋅uhˢ)" => (α⁻ - α₋) * (uh⋅uhˢ),
-                    "(α⁻ - α₋) * Gτ(uh⋅uhˢ)" => FEFunction(V, ret[5]),
+                    "(α⁻ - α₋) * Gτ(uh⋅uhˢ)" => FEFunction(V, vec(ret[5])),
 
                     "(ks - kf) * ∇(Th)⋅∇(Thˢ)" => (ks - kf) * ∇(Th)⋅∇(Thˢ),
-                    "(ks - kf) * Gτ(∇T⋅∇Tˢ)" => FEFunction(V, ret[6]),
+                    "(ks - kf) * Gτ(∇T⋅∇Tˢ)" => FEFunction(V, vec(ret[6])),
 
                     "γ * (ks - kf) * (Th - Ts) * Thˢ" => γ * (ks - kf) * (Th - Ts) * Thˢ,
-                    "γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)" => FEFunction(V, ret[7]),
+                    "γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)" => FEFunction(V, vec(ret[7])),
                     
                     "Φ̂" => β₁/2 * (α⁻ - α₋) * uh⋅uh + 
                             β₃ * γ * (kf - ks) * (Ts - Th) + 
