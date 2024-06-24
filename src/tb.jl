@@ -185,6 +185,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)" => FEFunction(V, vec(ret[1])),
 
                     "β₃ * γ * (kf - ks) * (Ts - Th)" => β₃ * γ * (kf - ks) * (Ts - Th),
+
                     "β₃ * γ * (kf - ks) * Gτ(Ts - Th)" => FEFunction(V, vec(ret[4])),
 
                     "(α⁻ - α₋) * (uh⋅uhˢ)" => (α⁻ - α₋) * (uh⋅uhˢ),
