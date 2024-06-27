@@ -26,8 +26,11 @@ using FFTW
 using FillArrays
 using SparseArrays
 using DataFrames
+using ValueHistories
+using VideoIO
 
 export run_with_configs
+export domain2mp4
 
 
 include("utils.jl")

@@ -218,7 +218,7 @@ function gaussian_kernel!(A::Array, N::Int, pdsz::Int, τ)
         xi = li[i]
         for j = eachindex(li)
             xj = li[j]
-            A[i, j] = exp( -(xi^2 + xj^2)/τ ) / (π * τ̂)
+            A[i, j] = exp( -(xi^2 + xj^2)/τ̂ ) / (π * τ̂)
         end
     end
     A ./= sum(A)
