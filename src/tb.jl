@@ -384,7 +384,7 @@ function run_with_configs(vec_configs, comments)
     chmod(sh_file_name, 0o755)
     open(sh_file_name, "w") do io
         println(io, "#!/bin/bash")
-        println(io, "tensorboard --logdir=$(tb_path_prefix) --port=\$1 --samples_per_plugin=images=$(max_it+1)")
+        println(io, "tensorboard --logdir=./tb --port=\$1 --samples_per_plugin=images=$(max_it+1)")
     end
 
     jld2_prefix = joinpath(path, "jld2")
