@@ -14,7 +14,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         save_start::Int = config["save_start"]
         vol = config["vol"]
         is_correct = config["is_correct"]
-        is_restart = config["is_restart"]
         is_vol_constraint = config["is_vol_constraint"]
         is_bdupdate = config["is_bdupdate"]
 
@@ -86,7 +85,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify
 
     # bd_tag = ["wall", "inlet", "outlet"]
-    (motion_space, fixed_space), (Ω, Γs), (dx, dΓs), perm = initmodel(model, ["interior"], [], [[5, 6], 7, 8]);
+    (motion_space, fixed_space), (Ω, _), (dx, dΓs), perm = initmodel(model, ["interior"], [], [[5, 6], 7, 8]);
     fixed_fe_χ = FEFunction(fixed_space, Fill(1., num_free_dofs(fixed_space)));
     # ---------------------------------------------------------------------------------------------------------
     
@@ -109,12 +108,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     motion_cache_Φ = Matrix{Float64}(undef, N + 1, N + 1);
     motion_cache_Φs = (motion_cache_Φ, similar(motion_cache_Φ), similar(motion_cache_Φ));
     
-    @info "run_$(run_i): computing initial energy ..."
+    debug && @info "run_$(run_i): computing initial energy ..."
     motion_cache_arrs = (motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂);
     params = (α₋, α⁻, kf, ks)
     coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm);
 
-    cur_δt = δt*(1 - coeffs[2])
+    cur_δt = δt*coeffs[2]
     params = (g, β₁, β₂, β₃, N, Re, cur_δt, γ, Ts, motion.τ[])
     J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                 params, coeffs, dx, dΓs)
@@ -135,16 +134,16 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     idx_increase = SzVector(Int, n, 0);
     idx_decrease = SzVector(Int, n, 0);
 
-    @info "----------------- start iteration ------------------"
+    debug && @info "----------------- start iteration ------------------"
 
     i = 1
     while i <= max_it
-        @info "run_$(run_i) iteration $(i): "
+        debug && @info "run_$(run_i) iteration $(i): "
 
         time_out = time()
         copy!(motion_arr_χ_old, motion_cache_arr_χ);
 
-        cur_δt = δt*(1 - coeffs[2])
+        cur_δt = δt*coeffs[2]
         params = (N, Re, cur_δt, γ, β₃)
         adjoint_pde_solve!(cache_ad_fe_funcs, cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                         params, coeffs, dx)
@@ -181,27 +180,27 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "(Th - Ts) * Thˢ" => (Ts - Th) * Thˢ,
                     "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
 
-                    "β₁/2 * (α⁻ - α₋) * uh⋅uh" => β₁/2 * (α⁻ - α₋) * uh⋅uh,
-                    "β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)" => FEFunction(V, vec(ret[1])),
+                    "β₁/2 * (α₋ - α⁻) * uh⋅uh" => β₁/2 * (α₋ - α⁻) * uh⋅uh,
+                    "β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)" => FEFunction(V, vec(ret[1])),
 
-                    "β₃ * γ * (kf - ks) * (Ts - Th)" => β₃ * γ * (kf - ks) * (Ts - Th),
+                    "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
 
-                    "β₃ * γ * (kf - ks) * Gτ(Ts - Th)" => FEFunction(V, vec(ret[4])),
+                    "β₃ * γ * (ks - kf) * Gτ(Ts - Th)" => FEFunction(V, vec(ret[4])),
 
-                    "(α⁻ - α₋) * (uh⋅uhˢ)" => (α⁻ - α₋) * (uh⋅uhˢ),
-                    "(α⁻ - α₋) * Gτ(uh⋅uhˢ)" => FEFunction(V, vec(ret[5])),
+                    "(α₋ - α⁻) * (uh⋅uhˢ)" => (α₋ - α⁻) * (uh⋅uhˢ),
+                    "(α₋ - α⁻) * Gτ(uh⋅uhˢ)" => FEFunction(V, vec(ret[5])),
 
-                    "(ks - kf) * ∇(Th)⋅∇(Thˢ)" => (ks - kf) * ∇(Th)⋅∇(Thˢ),
-                    "(ks - kf) * Gτ(∇T⋅∇Tˢ)" => FEFunction(V, vec(ret[6])),
+                    "(kf - ks) * ∇(Th)⋅∇(Thˢ)" => (kf - ks) * ∇(Th)⋅∇(Thˢ),
+                    "(kf - ks) * Gτ(∇T⋅∇Tˢ)" => FEFunction(V, vec(ret[6])),
 
-                    "γ * (ks - kf) * (Th - Ts) * Thˢ" => γ * (ks - kf) * (Th - Ts) * Thˢ,
-                    "γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)" => FEFunction(V, vec(ret[7])),
+                    "γ * (kf - ks) * (Th - Ts) * Thˢ" => γ * (kf - ks) * (Th - Ts) * Thˢ,
+                    "γ * (kf - ks) * Gτ((Th - Ts) * Thˢ)" => FEFunction(V, vec(ret[7])),
                     
-                    "Φ̂" => β₁/2 * (α⁻ - α₋) * uh⋅uh + 
-                            β₃ * γ * (kf - ks) * (Ts - Th) + 
-                            (α⁻ - α₋) * (uh⋅uhˢ) + 
-                            (ks - kf) * ∇(Th)⋅∇(Thˢ) + 
-                            γ * (ks - kf) * (Th - Ts) * Thˢ,
+                    "Φ̂" => β₁/2 * (α₋ - α⁻) * uh⋅uh + 
+                            β₃ * γ * (ks - kf) * (Ts - Th) + 
+                            (α₋ - α⁻) * (uh⋅uhˢ) + 
+                            (kf - ks) * ∇(Th)⋅∇(Thˢ) + 
+                            γ * (kf - ks) * (Th - Ts) * Thˢ,
                     ]
             else
                 c_fs = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
@@ -227,7 +226,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         params = (α₋, α⁻, kf, ks)
         coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm)
 
-        cur_δt = δt*(1 - coeffs[2])
+        cur_δt = δt*coeffs[2]
         params = (g, β₁, β₂, β₃, N, Re, cur_δt, γ, Ts, motion.τ[])
         J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                     params, coeffs, dx, dΓs)
@@ -249,7 +248,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 computeAB!(idx_decrease, idx_increase, idx_exist_sort_pre, idx_pick_post, motion_cache_Φ)
 
                 if length(idx_decrease) == 0 && length(idx_increase) == 0 
-                    @info "run_$(run_i): correction failed! now restart with a smaller τ." 
+                    @info "run_$(run_i): correction failed!" 
                     err_flag_in_iter = true
                     break
                 end
@@ -260,7 +259,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 params = (α₋, α⁻, kf, ks)
                 coeffs = getcoeff!(motion_cache_arrs, motion_cache_fe_funcs, fixed_fe_χ, motion, params, perm)
 
-                cur_δt = δt*(1 - coeffs[2])
+                cur_δt = δt*coeffs[2]
                 params = (g, β₁, β₂, β₃, N, Re, cur_δt, γ, Ts, motion.τ[])
                 J = pde_solve!(cache_fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
                             params, coeffs, dx, dΓs)
@@ -274,17 +273,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             break
         end
         
-        # restar with a smaller τ
+        # inner iteration failed
         if err_flag_in_iter
-            if is_restart
-                update_tau!(motion, ϵ_ratio);
-                # restore cache data
-                copy!(motion_cache_arr_χ, motion_arr_χ_old);
-                continue
-            else
-                @info "run_$(run_i): restarting is off, now break iteration."
-                break
-            end
+            break
         end
 
         E = Ei
@@ -292,7 +283,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         volₖ = sum(motion_cache_arr_χ) / length(motion_cache_arr_χ)
         curϵ = norm(motion_cache_arr_χ - motion_arr_χ_old, 2)
-        @info "run_$(run_i): J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
+        debug && @info "run_$(run_i): J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(motion_cache_arr_χ, WH)
             @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E

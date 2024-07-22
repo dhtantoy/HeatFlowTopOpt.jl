@@ -10,7 +10,7 @@ vec_configs = [
     "β₂" => 1.,
     "β₃" => 1,
     "δt" => 8e-3,
-    "α⁻" => 41750,
+    "α⁻" => 417.5,
     "α₋" => 0.,
     "kf" => 0.1624,
     "ks" => 40.47,
@@ -19,7 +19,7 @@ vec_configs = [
     "Ts" => 1.,
     "ud⋅n" => 0.,
     "Td" => 0.0,
-    "g⋅n" => 0.1,
+    "g⋅n" => 33.5,
     "Ts" => 1.,
 
     # motion paramter
@@ -32,21 +32,20 @@ vec_configs = [
     # top opt parameter
     "correct_ratio" => 0.5,
     "ϵ_ratio" => 0.5,
-    "ϵ" => 10., 
+    "ϵ" => 30., 
     "save_iter" => 1,
-    "save_start" => 18,
-    "vol" => 0.7,
-    "max_it" => 30,
+    "save_start" => 0,
+    "vol" => 0.3,
+    "max_it" => 10,
     "InitType" => "Rand",
     "is_correct" => true,
-    "is_restart" => false,       # if not correction, then restart is off.
     "is_vol_constraint" => true, # if false, then set val to a scalar.
     "is_bdupdate" => false,
 
     # model parameter
-    "N" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "N" => 10,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
-    "L" => 1.
+    "L" => 1.,
 ];
 
 base_config, appended_config_arr = HeatFlowTopOpt.parse_vec_configs(vec_configs)

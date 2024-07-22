@@ -53,7 +53,7 @@ return
 - perm: permutation map generated from `sortperm(aux_Ω)`;      
 """
 function initmodel(model::DiscreteModel, motion_domain_tags::Vector, fixed_domain_tags::Vector, boundary_tags::Vector)
-    @info "generating triangulation ..."
+    # @info "generating triangulation ..."
     Ω = Triangulation(model)
     motion_Ω = Triangulation(model, motion_domain_tags)
     fixed_Ω = Triangulation(model, fixed_domain_tags)
@@ -61,16 +61,16 @@ function initmodel(model::DiscreteModel, motion_domain_tags::Vector, fixed_domai
         BoundaryTriangulation(model; tags= tags)
     end 
 
-    @info "generating measure ..."
+    # @info "generating measure ..."
     dx = Measure(Ω, 4)
     dΓs = map(Γs) do Γ
         Measure(Γ, 4)
     end
 
-    @info "computing permutation map ..."
+    # @info "computing permutation map ..."
     perm = sortperm(get_node_coordinates(motion_Ω); lt= sort_axes_lt)
 
-    @info "constrcting fe space for motion and fixed domain..."
+    # @info "constrcting fe space for motion and fixed domain..."
     motion_space = TestFESpace(motion_Ω, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
     fixed_space = TestFESpace(fixed_Ω, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
  
@@ -86,7 +86,7 @@ return
     - `motion_cache_fe_κ`: finite element function of coefficient κ; 
 """
 function initfefuncs(motion_space)
-    @info "constructing fefunction fe_χ, fe_Gτχ fe_α, fe_κ ..."
+    # @info "constructing fefunction fe_χ, fe_Gτχ fe_α, fe_κ ..."
     motion_cache_fe_χ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
     motion_cache_fe_Gτχ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
     motion_cache_fe_α = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
@@ -112,7 +112,7 @@ function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
     np = num_free_dofs(motion_sapce)
     N_node::Int = np ^ (1//dim)
 
-    @info "------------- generate χ₀ -------------"
+    # @info "------------- generate χ₀ -------------"
     if InitType == "All"
         motion_cache_arr_χ = ones(Float64, repeat([N_node], dim)...)
     else
@@ -167,16 +167,16 @@ return
 - cache_ad_fe_funcs: vector of caches for adjoint FEFunction. 
 """
 function initspaces(model, dx, Td, ud, diri_tags::Vector)
-    @info "------------- space setting -------------"
+    # @info "------------- space setting -------------"
     ref_T = ReferenceFE(lagrangian, Float64, 1)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
     ref_P = ReferenceFE(lagrangian, Float64, 1)
 
-    @info "constructing trial and test spaces of heat equation..."
+    # @info "constructing trial and test spaces of heat equation..."
     T_test = TestFESpace(model, ref_T; conformity= :H1, dirichlet_tags= diri_tags[1])
     T_trial = TrialFESpace(T_test, Td)
 
-    @info "constructing trial and test spaces of Stoke equation..."
+    # @info "constructing trial and test spaces of Stoke equation..."
     V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= diri_tags[2])
     V_trial = TrialFESpace(V_test, ud)
 
@@ -186,7 +186,7 @@ function initspaces(model, dx, Td, ud, diri_tags::Vector)
     X = MultiFieldFESpace([V_trial, P_trial])
     Y = MultiFieldFESpace([V_test, P_test])
 
-    @info "preparing stiffness matrix cache..."
+    # @info "preparing stiffness matrix cache..."
     T_assem = SparseMatrixAssembler(T_trial, T_test)
     V_assem = SparseMatrixAssembler(X, Y)
 
@@ -203,7 +203,7 @@ function initspaces(model, dx, Td, ud, diri_tags::Vector)
     cache_V_b = allocate_vector(V_assem, (nothing, [X_cell_dof_ids]))
     cache_V_A = allocate_matrix(V_assem, ([iwq], [X_cell_dof_ids], [X_cell_dof_ids]))
 
-    @info "preparing cache FEFunction for Th, Thˢ, uh, uhˢ..."
+    # @info "preparing cache FEFunction for Th, Thˢ, uh, uhˢ..."
     T_n = get_free_dof_ids(T_trial) |> length
     cache_Th = FEFunction(T_trial, zeros(Float64, T_n))
     cache_Thˢ = FEFunction(T_test, zeros(Float64, T_n))
@@ -264,14 +264,14 @@ function getcoeff!(
     motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂ = motion_cache_arrs
     α₋, α⁻, kf, ks = params
 
-    @tturbo @. motion_cache_arr_χ₂ = 1 - motion_cache_arr_χ
+    @. motion_cache_arr_χ₂ = 1 - motion_cache_arr_χ
     motion(motion_cache_arr_Gτχ, motion_cache_arr_χ)
     motion(motion_cache_arr_Gτχ₂, motion_cache_arr_χ₂)
 
-    for i in eachindex(perm) 
+    @fastmath @inbounds for i in eachindex(perm) 
         p_i = perm[i]
-        motion_cache_fe_α.free_values[p_i] = α⁻ * motion_cache_arr_Gτχ[i] + α₋ * motion_cache_arr_Gτχ₂[i]
-        motion_cache_fe_κ.free_values[p_i] = ks * motion_cache_arr_Gτχ[i] + kf * motion_cache_arr_Gτχ₂[i]
+        motion_cache_fe_α.free_values[p_i] = α₋ * motion_cache_arr_Gτχ[i] + α⁻ * motion_cache_arr_Gτχ₂[i]
+        motion_cache_fe_κ.free_values[p_i] = kf * motion_cache_arr_Gτχ[i] + ks * motion_cache_arr_Gτχ₂[i]
         motion_cache_fe_χ.free_values[p_i] = motion_cache_arr_χ[i]
         motion_cache_fe_Gτχ.free_values[p_i] = motion_cache_arr_Gτχ[i]
     end
@@ -309,7 +309,7 @@ function pde_solve!(
     dΓin = dΓs[2]
 
     g, β₁, β₂, β₃, N, Re, δt, γ, Ts, τ = params
-    h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
+    h = 1 / N; δt *= h^2; μ = 1/Re; # δu = h^2;
     
     a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
     l_V((v, q)) = ∫( g ⋅ v)dΓin
@@ -317,8 +317,8 @@ function pde_solve!(
     assemble_vector!(l_V, cache_V_b, V_assem, Y)
     solver(uh.free_values.parent, cache_V_A, cache_V_b)
 
-    a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt*(1-Gτχ)))dx
-    l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt*(1-Gτχ))dx
+    a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
+    l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
     assemble_matrix!(a_T, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_T, cache_T_b, T_assem, T_test)
     solver(Th.free_values, cache_T_A, cache_T_b)
@@ -351,13 +351,13 @@ function adjoint_pde_solve!(
     cache_T_A, cache_V_A = cache_As 
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
-    _, Gτχ, α, κ = coeffs
+    _, _, α, κ = coeffs
     N, Re, δt, γ, β₃ = params
 
-    h = 1 / N; δt *= h^2; δu = h^2; μ = 1/Re
+    h = 1 / N; δt *= h^2; μ = 1/Re # δu = h^2; 
 
-    a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt*(1-Gτχ))dx 
-    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt*(1-Gτχ))dx
+    a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
+    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
     assemble_matrix!(a_Tˢ, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_Tˢ, cache_T_b, T_assem, T_test)
     solver(Thˢ.free_values, cache_T_A, cache_T_b)
@@ -436,10 +436,10 @@ function Phi!(
     out = cache_rev_Φ
 
     # ---------------------- compute Φ₁ - Φ₂ ----------------------
-    ## β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)
+    ## β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)
     _compute_node_value!(cache_node_val, uh⋅uh, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ = β₁/2 * (α⁻ - α₋) * out
+    @turbo @. cache_Φ = β₁/2 * (α₋ - α⁻) * out
 
     ## β₂ * √(π/τ) * Gτ(1 - χ)
     @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
@@ -447,25 +447,25 @@ function Phi!(
     ## - β₂ * √(π/τ) * Gτχ
     @turbo @. cache_Φ -= β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
 
-    ## β₃ * γ * (kf - ks) * Gτ(Ts - Th)
+    ## β₃ * γ * (ks - kf) * Gτ(Ts - Th)
     _compute_node_value!(cache_node_val, Ts - Th, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += β₃ * γ * (kf - ks) * out
+    @turbo @. cache_Φ += β₃ * γ * (ks - kf) * out
 
-    ## (α⁻ - α₋) * Gτ(uh⋅uhˢ)
+    ## (α₋ - α⁻) * Gτ(uh⋅uhˢ)
     _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += (α⁻ - α₋) * out
+    @turbo @. cache_Φ += (α₋ - α⁻) * out
 
-    ## (ks - kf) * Gτ(∇T⋅∇Tˢ)
+    ## (kf - ks) * ∇(Th)⋅∇(Thˢ)
     _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += (ks - kf) * out
+    @turbo @. cache_Φ += (kf - ks) * out
 
-    ## γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)
+    ## γ * (kf - ks) * Gτ((Th - Ts) * Thˢ)
     _compute_node_value!(cache_node_val, (Th - Ts) * Thˢ, trian)
     motion(out, cache_node_val)
-    @turbo @. cache_Φ += γ * (ks - kf) * out
+    @turbo @. cache_Φ += γ * (kf - ks) * out
 
     @turbo cache_rev_Φ .= cache_Φ
     reverse!(cache_rev_Φ, dims= 2)
@@ -495,10 +495,10 @@ function Phi_debug(
     out = cache_rev_Φ
 
     # ---------------------- compute Φ₁ - Φ₂ ----------------------
-    ## β₁/2 * (α⁻ - α₋) * Gτ(uh⋅uh)
+    ## β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)
     _compute_node_value!(cache_node_val, uh⋅uh, trian)
     motion(out, cache_node_val)
-    ret1 = β₁/2 * (α⁻ - α₋) * out
+    ret1 = β₁/2 * (α₋ - α⁻) * out
 
 
     ## β₂ * √(π/τ) * Gτ(1 - χ)
@@ -507,23 +507,23 @@ function Phi_debug(
     ## - β₂ * √(π/τ) * Gτχ
     ret3 = β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
 
-    ## β₃ * γ * (kf - ks) * Gτ(Ts - Th)
+    ## β₃ * γ * (ks - kf) * Gτ(Ts - Th)
     _compute_node_value!(cache_node_val, Ts - Th, trian)
     motion(out, cache_node_val)
-    ret4 = β₃ * γ * (kf - ks) * out
+    ret4 = β₃ * γ * (ks - kf) * out
 
-    ## (α⁻ - α₋) * Gτ(uh⋅uhˢ)
+    ## (α₋ - α⁻) * Gτ(uh⋅uhˢ)
     _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
     motion(out, cache_node_val)
-    ret5 = (α⁻ - α₋) * out
+    ret5 = (α₋ - α⁻) * out
 
-    ## (ks - kf) * Gτ(∇T⋅∇Tˢ)
+    ## (kf - ks) * Gτ(∇T⋅∇Tˢ)
     _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
     motion(out, cache_node_val)
-    ret6 = (ks - kf) * out
+    ret6 = (kf - ks) * out
 
-    ## γ * (ks - kf) * Gτ((Th - Ts) * Thˢ)
-    _compute_node_value!(cache_node_val, (Th - Ts) * Thˢ, trian)
+    ## γ * (ks - kf) * Gτ((Ts - Th) * Thˢ)
+    _compute_node_value!(cache_node_val, (Ts - Th) * Thˢ, trian)
     motion(out, cache_node_val)
     ret7 = γ * (ks - kf) * out
 
