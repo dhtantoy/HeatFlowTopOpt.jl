@@ -30,7 +30,7 @@ end
 more efficient than `setdiff` for vectors ordered by a second vector.
     note that the length of `i_pre_all` is `bgM` and `i_post_all` is `curM`, where `curM` ≤ `bgM`
 """
-function computeAB!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2}, idx_exist_sort_pre::AbstractVector{T1}, idx_pick_post::AbstractVector{T2}, Φ::Array) where {T1, T2}
+function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2}, idx_exist_sort_pre::AbstractVector{T1}, idx_pick_post::AbstractVector{T2}, Φ::Array) where {T1, T2}
     na = length(idx_exist_sort_pre)
     nb = length(idx_pick_post)
     resize!(idx_decrease, 0)

@@ -10,8 +10,8 @@ vec_configs = [
     "β₂" => 1.,
     "β₃" => 1,
     "δt" => 8e-3,
+    "δu" => 1e-2,
     "α⁻" => 417.5,
-    "α₋" => 0.,
     "kf" => 0.1624,
     "ks" => 40.47,
     "Re" => 5988.,
@@ -36,7 +36,7 @@ vec_configs = [
     "save_iter" => 1,
     "save_start" => 0,
     "vol" => 0.3,
-    "max_it" => 10,
+    "max_it" => 5,
     "InitType" => "Rand",
     "is_correct" => true,
     "is_vol_constraint" => true, # if false, then set val to a scalar.
@@ -58,7 +58,6 @@ map(eachindex(appended_config_arr)) do i
     # debug
     HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= true)
     savepvd(pvd)
-
 end
 
 

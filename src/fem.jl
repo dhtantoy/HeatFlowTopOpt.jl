@@ -1,62 +1,6 @@
-struct NullTriangulation{Dc, Dp} <: Triangulation{Dc, Dp} 
-    NullTriangulation(model::DiscreteModel) = begin
-        Dp = num_point_dims(model)
-        Dc = num_cell_dims(model)
-        new{Dc, Dp}()
-    end
-end
-
-struct NullFESpace{T} <: FESpace 
-    trian::T
-end
-
-struct NullFEFunction{T, DT} <: FEFunction 
-    space::T
-    domain_style::DT
-end
-
-
-Gridap.get_triangulation(ns::NullFESpace) = ns.trian
-Gridap.num_free_dofs(::NullFESpace) = 0
-Gridap.num_cells(::NullTriangulation) = 0
-Gridap.get_triangulation(nf::NullFEFunction) = get_triangulation(nf.space)
-Gridap.DomainStyle(nf::NullFEFunction) = nf.domain_style
-
-function Gridap.Triangulation(m::DiscreteModel, domain_tags::Vector)
-    return isempty(domain_tags) ? NullTriangulation(m) : Triangulation(m, tags= domain_tags)
-end
-function Gridap.FESpace(nt::NullTriangulation, arg...; kwarg...)
-    return NullFESpace(nt)
-end
-
-function Gridap.FEFunction(ns::NullFESpace, arg...; kwarg...)
-    return NullFEFunction(ns, ReferenceDomain())
-end
-
-Gridap.:+(a::FEFunction, ::NullFEFunction) = a
-Gridap.:+(::NullFEFunction, a::FEFunction) = a
-
-Gridap.:*(a::NullFEFunction, ::Number) = a
-Gridap.:*(::Number, a::NullFEFunction) = a
-
-"""
-return
-- spaces: 
-    - `motion_space`: fe space based on computational domain;  
-    - `fixed_space`: fe space based on the rest domain;        
-- trians:                                                      
-    - `Ω`: Triangulation of model;                             
-    - `Γs`: BoundaryTriangulation of model;                    
-- measures:                                                    
-    - `dx`: Measure on `Ω`;                                      
-    - `dΓs`: Measures on `Γs`;                                   
-- perm: permutation map generated from `sortperm(aux_Ω)`;      
-"""
-function initmodel(model::DiscreteModel, motion_domain_tags::Vector, fixed_domain_tags::Vector, boundary_tags::Vector)
+function initmodel(model::DiscreteModel, boundary_tags::Vector)
     # @info "generating triangulation ..."
     Ω = Triangulation(model)
-    motion_Ω = Triangulation(model, motion_domain_tags)
-    fixed_Ω = Triangulation(model, fixed_domain_tags)
     Γs = map(boundary_tags) do tags 
         BoundaryTriangulation(model; tags= tags)
     end 
@@ -67,32 +11,20 @@ function initmodel(model::DiscreteModel, motion_domain_tags::Vector, fixed_domai
         Measure(Γ, 4)
     end
 
-    # @info "computing permutation map ..."
-    perm = sortperm(get_node_coordinates(motion_Ω); lt= sort_axes_lt)
-
-    # @info "constrcting fe space for motion and fixed domain..."
-    motion_space = TestFESpace(motion_Ω, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
-    fixed_space = TestFESpace(fixed_Ω, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
- 
-    return (motion_space, fixed_space), (Ω, Γs), (dx, dΓs), perm
+    aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1)
+    
+    return aux_space, (Ω, Γs), (dx, dΓs)
 end
 
-"""
-return 
-- motion_cache_fe_funcs:                                       
-    - `motion_cache_fe_χ`: finite element function χ;          
-    - `motion_cache_fe_Gτχ`: finite element function Gτχ;      
-    - `motion_cache_fe_α`: finite element function of coefficient α;   
-    - `motion_cache_fe_κ`: finite element function of coefficient κ; 
-"""
-function initfefuncs(motion_space)
-    # @info "constructing fefunction fe_χ, fe_Gτχ fe_α, fe_κ ..."
-    motion_cache_fe_χ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
-    motion_cache_fe_Gτχ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
-    motion_cache_fe_α = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
-    motion_cache_fe_κ = FEFunction(motion_space, zeros(Float64, num_free_dofs(motion_space)))
 
-    return motion_cache_fe_χ, motion_cache_fe_Gτχ, motion_cache_fe_α, motion_cache_fe_κ
+function initfefuncs(aux_space)
+    # @info "constructing fefunction fe_χ, fe_Gτχ fe_α, fe_κ ..."
+    cache_fe_χ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)))
+    cache_fe_Gτχ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)))
+    cache_fe_α = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)))
+    cache_fe_κ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)))
+
+    return cache_fe_χ, cache_fe_Gτχ, cache_fe_α, cache_fe_κ
 end
 
 
@@ -107,53 +39,51 @@ return
 - motion_cache_arr_Gτχ: cache of Gτχ in the form of array;         
 - motion_cache_arr_Gτχ₂: cache of Gτχ₂ int the form of array.     
 """
-function initcachechis(InitType, motion_sapce; vol= 0.4, seed= 1)
-    dim = get_triangulation(motion_sapce) |> num_point_dims
-    np = num_free_dofs(motion_sapce)
+function initcachechis(InitType, aux_space; vol= 0.4, seed= 1)
+    dim = get_triangulation(aux_space) |> num_point_dims
+    np = num_free_dofs(aux_space)
     N_node::Int = np ^ (1//dim)
 
     # @info "------------- generate χ₀ -------------"
     if InitType == "All"
-        motion_cache_arr_χ = ones(Float64, repeat([N_node], dim)...)
+        cache_arr_χ = ones(Float64, repeat([N_node], dim)...)
     else
-        motion_cache_arr_χ = zeros(Float64, repeat([N_node], dim)...)
+        cache_arr_χ = zeros(Float64, repeat([N_node], dim)...)
 
         if InitType == "Net"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:2:end]
-                motion_cache_arr_χ[:, I] .= 1
-                motion_cache_arr_χ[:, end .- I] .= 1
-                motion_cache_arr_χ[I, :] .= 1
-                motion_cache_arr_χ[end .- I, :] .= 1
+                cache_arr_χ[:, I] .= 1
+                cache_arr_χ[:, end .- I] .= 1
+                cache_arr_χ[I, :] .= 1
+                cache_arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Line"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:2:end]
-                motion_cache_arr_χ[:, I] .= 1
-                motion_cache_arr_χ[:, end .- I] .= 1
+                cache_arr_χ[:, I] .= 1
+                cache_arr_χ[:, end .- I] .= 1
             end
         elseif InitType == "Rand"
             Random.seed!(seed)
-            m₁, m₂ = size(motion_cache_arr_χ)
+            m₁, m₂ = size(cache_arr_χ)
             c::Int = ceil(m₂ / 2)
             f::Int = floor(m₂ / 2)
             N = c * m₁
             perm = randperm(N)
             M = round(Int, N * vol)
-            motion_cache_arr_χ[ perm[1:M] ] .= 1
+            cache_arr_χ[ perm[1:M] ] .= 1
 
-            motion_cache_arr_χ[:, c+1:end] = motion_cache_arr_χ[:, f:-1:1]
+            cache_arr_χ[:, c+1:end] = cache_arr_χ[:, f:-1:1]
         else
             error("InitType not defined!") |> throw
         end
     end
 
-    motion_cache_arr_χ₂ = similar(motion_cache_arr_χ)
-    motion_cache_arr_Gτχ = similar(motion_cache_arr_χ)
-    motion_cache_arr_Gτχ₂ = similar(motion_cache_arr_χ)
-    return motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂
+    cache_arr_Gτχ = similar(cache_arr_χ)
+    return cache_arr_χ, cache_arr_Gτχ
 end
 
 """
@@ -166,18 +96,18 @@ return
 - cache_fe_funcs: vector of caches for FEFunction.             
 - cache_ad_fe_funcs: vector of caches for adjoint FEFunction. 
 """
-function initspaces(model, dx, Td, ud, diri_tags::Vector)
+function initspaces(model, dx, Td, ud)
     # @info "------------- space setting -------------"
     ref_T = ReferenceFE(lagrangian, Float64, 1)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
     ref_P = ReferenceFE(lagrangian, Float64, 1)
 
     # @info "constructing trial and test spaces of heat equation..."
-    T_test = TestFESpace(model, ref_T; conformity= :H1, dirichlet_tags= diri_tags[1])
+    T_test = TestFESpace(model, ref_T; conformity= :H1, dirichlet_tags= [7])
     T_trial = TrialFESpace(T_test, Td)
 
     # @info "constructing trial and test spaces of Stoke equation..."
-    V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= diri_tags[2])
+    V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= [5, 6])
     V_trial = TrialFESpace(V_test, ud)
 
     P_test = TestFESpace(model, ref_P; conformity= :L2, constraint= :zeromean)
@@ -232,54 +162,31 @@ lapack solver.
     return nothing
 end
 
-"""
-update 
-- motion_cache_arrs:       
-    - motion_cache_arr_χ     
-    - motion_cache_arr_χ₂    
-    - motion_cache_arr_Gτχ   
-    - motion_cache_arr_Gτχ₂  
-- motion_cache_fe_funcs:   
-    - motion_cache_fe_χ      
-    - motion_cache_fe_Gτχ    
-    - motion_cache_fe_α      
-    - motion_cache_fe_κ  
 
-# return
-- fe_χ: finite function χ on the whole domain;         
-- fe_Gτχ: finite function Gτχ on the whole domain;     
-- fe_α: finite function α on the whole domain;         
-- fe_κ: finite function κ on the whole domain; 
-    
-"""
-function getcoeff!(
-    motion_cache_arrs,
-    motion_cache_fe_funcs, 
-    fixed_fe_χ,
+function update_motion_funcs!(
+    motion_funcs,
+    cache_arrs,
     motion,
-    params,
-    perm)
+    params)
 
-    motion_cache_fe_χ, motion_cache_fe_Gτχ, motion_cache_fe_α, motion_cache_fe_κ = motion_cache_fe_funcs
-    motion_cache_arr_χ, motion_cache_arr_χ₂, motion_cache_arr_Gτχ, motion_cache_arr_Gτχ₂ = motion_cache_arrs
-    α₋, α⁻, kf, ks = params
+    fe_χ, fe_Gτχ, fe_α, fe_κ = motion_funcs
+    cache_arr_χ, cache_arr_Gτχ = cache_arrs
+    α⁻, kf, ks = params
 
-    @. motion_cache_arr_χ₂ = 1 - motion_cache_arr_χ
-    motion(motion_cache_arr_Gτχ, motion_cache_arr_χ)
-    motion(motion_cache_arr_Gτχ₂, motion_cache_arr_χ₂)
+    motion(cache_arr_Gτχ, cache_arr_χ)
 
-    @fastmath @inbounds for i in eachindex(perm) 
-        p_i = perm[i]
-        motion_cache_fe_α.free_values[p_i] = α₋ * motion_cache_arr_Gτχ[i] + α⁻ * motion_cache_arr_Gτχ₂[i]
-        motion_cache_fe_κ.free_values[p_i] = kf * motion_cache_arr_Gτχ[i] + ks * motion_cache_arr_Gτχ₂[i]
-        motion_cache_fe_χ.free_values[p_i] = motion_cache_arr_χ[i]
-        motion_cache_fe_Gτχ.free_values[p_i] = motion_cache_arr_Gτχ[i]
+    @turbo for i = eachindex(fe_α.free_values)
+        fe_α.free_values[i] = α⁻ * (1 - cache_arr_Gτχ[i])
     end
 
-    fe_χ = fixed_fe_χ + motion_cache_fe_χ
-    fe_Gτχ = fixed_fe_χ + motion_cache_fe_Gτχ
-    fe_α = fixed_fe_χ * α₋ + motion_cache_fe_α
-    fe_κ = fixed_fe_χ * kf + motion_cache_fe_κ
+    @turbo for i = eachindex(fe_κ.free_values)
+        fe_κ.free_values[i] = (kf - ks) * cache_arr_Gτχ[i] + ks
+    end
+
+    # @turbo @. fe_α.free_values = α⁻ * (1 - cache_arr_Gτχ)
+    # @turbo @. fe_κ.free_values = (kf - ks) * cache_arr_Gτχ + ks
+    copy!(fe_χ.free_values, vec(cache_arr_χ))
+    copy!(fe_Gτχ.free_values, vec(cache_arr_Gτχ))
 
     return fe_χ, fe_Gτχ, fe_α, fe_κ
 end
@@ -295,7 +202,7 @@ function pde_solve!(
     cache_bs, 
     assemblers,
     params,
-    coeffs,
+    motion_funcs,
     dx,
     dΓs)
     
@@ -305,11 +212,11 @@ function pde_solve!(
     cache_T_A, cache_V_A = cache_As 
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
-    χ, Gτχ, α, κ = coeffs
+    χ, Gτχ, α, κ = motion_funcs
     dΓin = dΓs[2]
 
-    g, β₁, β₂, β₃, N, Re, δt, γ, Ts, τ = params
-    h = 1 / N; δt *= h^2; μ = 1/Re; # δu = h^2;
+    g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, τ = params
+    h = 1 / N; δt *= h^2; μ = 1/Re; δu *= h^2;
     
     a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
     l_V((v, q)) = ∫( g ⋅ v)dΓin
@@ -341,7 +248,7 @@ function adjoint_pde_solve!(
     cache_bs,
     assemblers,
     params,
-    coeffs,
+    motion_funcs,
     dx)
 
     Thˢ, uhˢ = cache_ad_fe_funcs
@@ -351,10 +258,10 @@ function adjoint_pde_solve!(
     cache_T_A, cache_V_A = cache_As 
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
-    _, _, α, κ = coeffs
-    N, Re, δt, γ, β₃ = params
+    _, _, α, κ = motion_funcs
+    N, Re, δt, δu, γ, β₃ = params
 
-    h = 1 / N; δt *= h^2; μ = 1/Re # δu = h^2; 
+    h = 1 / N; δt *= h^2; μ = 1/Re; δu *= h^2; 
 
     a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
     l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
@@ -378,9 +285,7 @@ implementation of version when Triangulation on
     UnstructuredGrid: the whold domain.   
 it(cell-wise) evaluates faster than that(parallelly point-wise).
 """
-function _is_portion(::BodyFittedTriangulation{Dc, 2, Tm, Tg}) where {Dc, Tm, Tg}
-    return Val(Tg <: GridPortion)
-end
+
 function _compute_node_value!(out, op, trian)
     T = eltype(out)
     Dc = num_cell_dims(trian)
@@ -415,59 +320,31 @@ compute Φ, note that motion does not have linearity !!!
 it could be optimized using `perm`.
 """
 function Phi!(
-    motion_cache_Φs,
+    cache_Φs,
     params,
     cache_fe_funcs,
     cache_ad_fe_funcs,
-    motion_space,
+    aux_space,
     motion,
-    motion_cache_arr_Gτχ,
-    motion_cache_arr_Gτχ₂)
+    cache_arr_Gτχ)
 
-    cache_Φ, cache_rev_Φ, cache_node_val = motion_cache_Φs
+    cache_Φ, cache_rev_Φ, cache_node_val = cache_Φs
     Th, uh = cache_fe_funcs
     Thˢ, uhˢ = cache_ad_fe_funcs
-    β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ = params
+    β₁, β₂, β₃, α⁻, Ts, kf, ks, γ = params
     
     τ = motion.τ[]
-    trian = get_triangulation(motion_space)
-
-    ## use cache of `cache_rev_Φ` to store result of `motion`
-    out = cache_rev_Φ
+    trian = get_triangulation(aux_space)
 
     # ---------------------- compute Φ₁ - Φ₂ ----------------------
-    ## β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)
-    _compute_node_value!(cache_node_val, uh⋅uh, trian)
-    motion(out, cache_node_val)
-    @turbo @. cache_Φ = β₁/2 * (α₋ - α⁻) * out
+    _M = -α⁻*(β₁/2*uh⋅uh + 2*uh⋅uhˢ) + (kf - ks)*(∇(Th)⋅∇(Thˢ)) + γ*(ks - kf)*((Ts - Th)*(Thˢ + β₃))
+    _compute_node_value!(cache_node_val, _M, trian)
+    motion(cache_Φ, cache_node_val)
 
-    ## β₂ * √(π/τ) * Gτ(1 - χ)
-    @turbo @. cache_Φ += β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
-
-    ## - β₂ * √(π/τ) * Gτχ
-    @turbo @. cache_Φ -= β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
-
-    ## β₃ * γ * (ks - kf) * Gτ(Ts - Th)
-    _compute_node_value!(cache_node_val, Ts - Th, trian)
-    motion(out, cache_node_val)
-    @turbo @. cache_Φ += β₃ * γ * (ks - kf) * out
-
-    ## (α₋ - α⁻) * Gτ(uh⋅uhˢ)
-    _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
-    motion(out, cache_node_val)
-    @turbo @. cache_Φ += (α₋ - α⁻) * out
-
-    ## (kf - ks) * ∇(Th)⋅∇(Thˢ)
-    _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)
-    motion(out, cache_node_val)
-    @turbo @. cache_Φ += (kf - ks) * out
-
-    ## γ * (kf - ks) * Gτ((Th - Ts) * Thˢ)
-    _compute_node_value!(cache_node_val, (Th - Ts) * Thˢ, trian)
-    motion(out, cache_node_val)
-    @turbo @. cache_Φ += γ * (kf - ks) * out
-
-    @turbo cache_rev_Φ .= cache_Φ
+    r = β₂ * sqrt(π / τ)
+    @turbo @. cache_Φ += r * (1 - 2 * cache_arr_Gτχ)
+    
+    copy!(cache_rev_Φ, cache_Φ)
     reverse!(cache_rev_Φ, dims= 2)
     @turbo @. cache_Φ = (cache_Φ + cache_rev_Φ) / 2
     nothing
@@ -478,31 +355,30 @@ function Phi_debug(
     params,
     cache_fe_funcs,
     cache_ad_fe_funcs,
-    motion_space,
+    aux_space,
     motion,
-    motion_cache_arr_Gτχ,
-    motion_cache_arr_Gτχ₂)
+    motion_cache_arr_Gτχ)
 
-    cache_Φ, cache_rev_Φ, cache_node_val = motion_cache_Φs
+    _, cache_rev_Φ, cache_node_val = motion_cache_Φs
     Th, uh = cache_fe_funcs
     Thˢ, uhˢ = cache_ad_fe_funcs
-    β₁, β₂, β₃, α⁻, α₋, Ts, kf, ks, γ = params
+    β₁, β₂, β₃, α⁻, Ts, kf, ks, γ = params
     
     τ = motion.τ[]
-    trian = get_triangulation(motion_space)
+    trian = get_triangulation(aux_space)
 
     ## use cache of `cache_rev_Φ` to store result of `motion`
     out = cache_rev_Φ
 
     # ---------------------- compute Φ₁ - Φ₂ ----------------------
-    ## β₁/2 * (α₋ - α⁻) * Gτ(uh⋅uh)
+    ## β₁/2 * (- α⁻) * Gτ(uh⋅uh)
     _compute_node_value!(cache_node_val, uh⋅uh, trian)
     motion(out, cache_node_val)
-    ret1 = β₁/2 * (α₋ - α⁻) * out
+    ret1 = β₁/2 * (- α⁻) * out
 
 
     ## β₂ * √(π/τ) * Gτ(1 - χ)
-    ret2 = β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ₂
+    ret2 = @. β₂ * sqrt(π / τ) * (1 - motion_cache_arr_Gτχ)
 
     ## - β₂ * √(π/τ) * Gτχ
     ret3 = β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
@@ -512,10 +388,10 @@ function Phi_debug(
     motion(out, cache_node_val)
     ret4 = β₃ * γ * (ks - kf) * out
 
-    ## (α₋ - α⁻) * Gτ(uh⋅uhˢ)
+    ## (- α⁻) * Gτ(uh⋅uhˢ)
     _compute_node_value!(cache_node_val, uh⋅uhˢ, trian)
     motion(out, cache_node_val)
-    ret5 = (α₋ - α⁻) * out
+    ret5 = (- α⁻) * out
 
     ## (kf - ks) * Gτ(∇T⋅∇Tˢ)
     _compute_node_value!(cache_node_val, ∇(Th)⋅∇(Thˢ), trian)

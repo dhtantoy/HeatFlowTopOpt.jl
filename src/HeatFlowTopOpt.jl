@@ -17,7 +17,6 @@ using Gridap.Geometry
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.FESpaces
-import GridapGmsh: gmsh
 
 using LoopVectorization
 using Pipe
@@ -39,7 +38,6 @@ export domain2mp4
 
 include("utils.jl")
 include("motion.jl")
-include("grid.jl")
 include("fem.jl")
 include("update.jl")
 include("tb.jl")
