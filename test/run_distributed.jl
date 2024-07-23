@@ -3,7 +3,7 @@ using Distributed
 # # run at 138
 addprocs([
             ("c95", 8),
-            ("c0130", 8),
+            # ("c0130", 2),
             # ("yhxiang@197", 2),
             # ("c0123", 4),
             # ("c0124", 4),
@@ -21,7 +21,9 @@ atexit() do
     end
 end
 
+@everywhere using MKL
 @everywhere using HeatFlowTopOpt
+
 
 vec_configs = [
     # pde parameter
@@ -54,18 +56,18 @@ vec_configs = [
     "ϵ" => 40., 
     "save_iter" => 30,
     "save_start" => 0,
-    "vol" => [0.3, 0.5],
+    "vol" => 0.3,
     "max_it" => 1000,
-    "InitType" => "Rand",
+    "InitType" => ["Rand", "Line"],
     "is_correct" => true,
     "is_vol_constraint" => true, # if false, then set val to a scalar.
     "is_bdupdate" => [false, true],
 
     # model parameter
-    "N" => [240, 512],  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "N" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
-comments = "testing smaller h"
+comments = "testing..."
 
 run_with_configs(vec_configs, comments)

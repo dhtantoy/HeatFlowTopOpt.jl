@@ -53,18 +53,18 @@ function initcachechis(InitType, aux_space; vol= 0.4, seed= 1)
         if InitType == "Net"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
-            for I in p[2:2:end]
-                cache_arr_χ[:, I] .= 1
-                cache_arr_χ[:, end .- I] .= 1
-                cache_arr_χ[I, :] .= 1
-                cache_arr_χ[end .- I, :] .= 1
+            for I in p[2:4:end]
+                motion_cache_arr_χ[:, I] .= 1
+                motion_cache_arr_χ[:, end .- I] .= 1
+                motion_cache_arr_χ[I, :] .= 1
+                motion_cache_arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Line"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
-            for I in p[2:2:end]
-                cache_arr_χ[:, I] .= 1
-                cache_arr_χ[:, end .- I] .= 1
+            for I in p[2:4:end]
+                motion_cache_arr_χ[:, I] .= 1
+                motion_cache_arr_χ[:, end .- I] .= 1
             end
         elseif InitType == "Rand"
             Random.seed!(seed)
