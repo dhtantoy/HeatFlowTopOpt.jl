@@ -110,7 +110,7 @@ function initspaces(model, dx, Td, ud)
     V_test = TestFESpace(model, ref_V; conformity= :H1, dirichlet_tags= [5, 6])
     V_trial = TrialFESpace(V_test, ud)
 
-    P_test = TestFESpace(model, ref_P; conformity= :L2, constraint= :zeromean)
+    P_test = TestFESpace(model, ref_P; conformity= :H1, constraint= :zeromean)
     P_trial = TrialFESpace(P_test)
 
     X = MultiFieldFESpace([V_trial, P_trial])
