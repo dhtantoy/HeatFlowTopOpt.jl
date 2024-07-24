@@ -77,6 +77,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     
     # init χs and prepare cache for array.
     cache_arr_χ, cache_arr_Gτχ = initcachechis(InitType, aux_space; vol= vol);
+    cache_arr_χ₂ = similar(cache_arr_χ);
+    cache_arr_Gτχ₂ = similar(cache_arr_Gτχ);
     volₖ = sum(cache_arr_χ) / length(cache_arr_χ);
     M = round(Int, length(cache_arr_χ) * vol);
     χ₀ = copy(cache_arr_χ);
@@ -94,7 +96,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     cache_Φs = (cache_Φ, similar(cache_Φ), similar(cache_Φ));
     
     debug && @info "run_$(run_i): computing initial energy ..."
-    cache_arrs = (cache_arr_χ, cache_arr_Gτχ);
+    cache_arrs = (cache_arr_χ, cache_arr_χ₂, cache_arr_Gτχ, cache_arr_Gτχ₂);
     params = (α⁻, kf, ks)
     update_motion_funcs!(motion_funcs, cache_arrs, motion, params);
 
@@ -133,14 +135,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # all pde solved.
         params = (β₁, β₂, β₃, α⁻, Ts, kf, ks, γ)
-        Phi!(cache_Φs, params, fe_funcs, ad_fe_funcs, aux_space, motion, cache_arr_Gτχ)
+        Phi!(cache_Φs, params, fe_funcs, ad_fe_funcs, aux_space, motion, cache_arr_Gτχ, cache_arr_Gτχ₂)
 
         if i >= save_start && mod(i, save_iter) == 0
             Th, uh = fe_funcs
             fe_χ = motion_funcs[1]
             if debug
-                params = (β₁, β₂, β₃, α⁻, Ts, kf, ks, γ)
-                ret = Phi_debug(cache_Φs, params, fe_funcs, ad_fe_funcs, aux_space, motion, cache_arr_Gτχ)
+                ret = Phi_debug(cache_Φs, params, fe_funcs, ad_fe_funcs, aux_space, motion, cache_arr_Gτχ, cache_arr_Gτχ₂)
 
                 # only support for uniform mesh grids.
                 V = get_fe_space(fe_χ)

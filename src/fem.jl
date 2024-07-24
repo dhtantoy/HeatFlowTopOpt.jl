@@ -28,17 +28,6 @@ function initfefuncs(aux_space)
 end
 
 
-"""
-return
-- motion_cache_arr_χ: initialiation of χ in the form of array     
-    - "All"  
-    - "Line"  
-    - "Net"  
-    - "Rand"  
-- motion_cache_arr_χ₂: cache of χ₂ in the form of array;           
-- motion_cache_arr_Gτχ: cache of Gτχ in the form of array;         
-- motion_cache_arr_Gτχ₂: cache of Gτχ₂ int the form of array.     
-"""
 function initcachechis(InitType, aux_space; vol= 0.4, seed= 1)
     dim = get_triangulation(aux_space) |> num_point_dims
     np = num_free_dofs(aux_space)
@@ -54,17 +43,17 @@ function initcachechis(InitType, aux_space; vol= 0.4, seed= 1)
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:4:end]
-                motion_cache_arr_χ[:, I] .= 1
-                motion_cache_arr_χ[:, end .- I] .= 1
-                motion_cache_arr_χ[I, :] .= 1
-                motion_cache_arr_χ[end .- I, :] .= 1
+                cache_arr_χ[:, I] .= 1
+                cache_arr_χ[:, end .- I] .= 1
+                cache_arr_χ[I, :] .= 1
+                cache_arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Line"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:4:end]
-                motion_cache_arr_χ[:, I] .= 1
-                motion_cache_arr_χ[:, end .- I] .= 1
+                cache_arr_χ[:, I] .= 1
+                cache_arr_χ[:, end .- I] .= 1
             end
         elseif InitType == "Rand"
             Random.seed!(seed)
@@ -170,17 +159,20 @@ function update_motion_funcs!(
     params)
 
     fe_χ, fe_Gτχ, fe_α, fe_κ = motion_funcs
-    cache_arr_χ, cache_arr_Gτχ = cache_arrs
+    cache_arr_χ, cache_arr_χ₂, cache_arr_Gτχ, cache_arr_Gτχ₂ = cache_arrs
     α⁻, kf, ks = params
 
+    @turbo @. cache_arr_χ₂ = 1 - cache_arr_χ
     motion(cache_arr_Gτχ, cache_arr_χ)
+    motion(cache_arr_Gτχ₂, cache_arr_χ₂)
+    
 
     @turbo for i = eachindex(fe_α.free_values)
-        fe_α.free_values[i] = α⁻ * (1 - cache_arr_Gτχ[i])
+        fe_α.free_values[i] = α⁻ * cache_arr_Gτχ₂[i]
     end
 
     @turbo for i = eachindex(fe_κ.free_values)
-        fe_κ.free_values[i] = (kf - ks) * cache_arr_Gτχ[i] + ks
+        fe_κ.free_values[i] = kf * cache_arr_Gτχ[i] + ks * cache_arr_Gτχ₂[i]
     end
 
     # @turbo @. fe_α.free_values = α⁻ * (1 - cache_arr_Gτχ)
@@ -326,7 +318,8 @@ function Phi!(
     cache_ad_fe_funcs,
     aux_space,
     motion,
-    cache_arr_Gτχ)
+    cache_arr_Gτχ,
+    cache_arr_Gτχ₂)
 
     cache_Φ, cache_rev_Φ, cache_node_val = cache_Φs
     Th, uh = cache_fe_funcs
@@ -342,7 +335,7 @@ function Phi!(
     motion(cache_Φ, cache_node_val)
 
     r = β₂ * sqrt(π / τ)
-    @turbo @. cache_Φ += r * (1 - 2 * cache_arr_Gτχ)
+    @turbo @. cache_Φ += r * (cache_arr_Gτχ₂ - cache_arr_Gτχ)
     
     copy!(cache_rev_Φ, cache_Φ)
     reverse!(cache_rev_Φ, dims= 2)
@@ -357,7 +350,8 @@ function Phi_debug(
     cache_ad_fe_funcs,
     aux_space,
     motion,
-    motion_cache_arr_Gτχ)
+    cache_arr_Gτχ,
+    cache_arr_Gτχ₂)
 
     _, cache_rev_Φ, cache_node_val = motion_cache_Φs
     Th, uh = cache_fe_funcs
@@ -378,10 +372,10 @@ function Phi_debug(
 
 
     ## β₂ * √(π/τ) * Gτ(1 - χ)
-    ret2 = @. β₂ * sqrt(π / τ) * (1 - motion_cache_arr_Gτχ)
+    ret2 = @. β₂ * sqrt(π / τ) * cache_arr_Gτχ₂
 
     ## - β₂ * √(π/τ) * Gτχ
-    ret3 = β₂ * sqrt(π / τ) * motion_cache_arr_Gτχ
+    ret3 = β₂ * sqrt(π / τ) * cache_arr_Gτχ
 
     ## β₃ * γ * (ks - kf) * Gτ(Ts - Th)
     _compute_node_value!(cache_node_val, Ts - Th, trian)
