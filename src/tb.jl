@@ -13,9 +13,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         save_iter::Int = config["save_iter"]
         save_start::Int = config["save_start"]
         vol = config["vol"]
-        is_correct = config["is_correct"]
-        is_vol_constraint = config["is_vol_constraint"]
-        is_bdupdate = config["is_bdupdate"]
 
         # parameters corresponding to motion
         up = config["up"]
@@ -23,6 +20,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         τ₀ = config["τ₀"]
         InitType = config["InitType"]
         motion_tag = config["motion_tag"]
+        stable_scheme::UInt = config["stable_scheme"]
         
         # parameters corresponding to PDE
         β₁ = config["β₁"]
@@ -79,6 +77,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     cache_arr_χ, cache_arr_Gτχ = initcachechis(InitType, aux_space; vol= vol);
     cache_arr_χ₂ = similar(cache_arr_χ);
     cache_arr_Gτχ₂ = similar(cache_arr_Gτχ);
+    cache_arr_rand_χ = similar(cache_arr_χ);
     volₖ = sum(cache_arr_χ) / length(cache_arr_χ);
     M = round(Int, length(cache_arr_χ) * vol);
     χ₀ = copy(cache_arr_χ);
@@ -191,20 +190,24 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * string(i); cellfields= c_fs)
         end
 
-        
-        # update on the boundary
-        if is_bdupdate
+        # --------------------- pre-process χ ---------------------------------
+        ## update on the boundary
+        if !iszero(stable_scheme & STABLE_BOUDARY)
             post_phi!(cache_Φ, cache_arr_Gτχ, down, up)
         end
-
-        # volumn constraint
-        if !is_vol_constraint
-            M = count(<=(0), cache_Φ)
-        end
+        # ---------------------------------------------------------------------
 
         get_ordered_idx!(idx_exist_sort_pre, cache_val_exist, cache_idx_exist, cache_arr_χ, cache_Φ);
-
         iterateχ!(cache_arr_χ, cache_Φ, idx_pick_post, M);
+
+        # --------------------- post-process χ ---------------------------------
+        if !iszero(stable_scheme & STABLE_OLD)
+            post_chi!(cache_arr_χ, arr_χ_old)
+        elseif !iszero(stable_scheme & STABLE_RANDOM)
+            random_chi!(cache_arr_rand_χ, M / length(cache_arr_χ), i);
+            post_chi!(cache_arr_χ, cache_arr_rand_χ)
+        end
+        # ---------------------------------------------------------------------
 
         params = (α⁻, kf, ks)
         coeffs = update_motion_funcs!(motion_funcs, cache_arrs, motion, params)
@@ -220,8 +223,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         n_in_iter = 0
         err_flag_in_iter = false
         
-        # correction
-        if is_correct
+        if !iszero(stable_scheme & STABLE_CORRECT)
             while Ei >= E
                 n_in_iter += 1
 
@@ -330,6 +332,10 @@ function run_with_configs(vec_configs, comments)
     )
     try 
         push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
+    catch 
+    end
+    try 
+        push!(dict_info, "COMMIT" => readchomp(`git rev-parse --short HEAD`))
     catch 
     end
 

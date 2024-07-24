@@ -1,3 +1,20 @@
+function random_chi!(cache_arr_rand_χ::Array{T}, vol, i) where T
+    rand!(Random.seed!(i), cache_arr_rand_χ)
+
+    @turbo for i = eachindex(cache_arr_rand_χ)
+        cache_arr_rand_χ[i] = ifelse(cache_arr_rand_χ[i] <= vol, one(T), zero(T))
+    end
+
+    return nothing
+end
+
+function post_chi!(cache_arr_χ, another)
+    @turbo for i = eachindex(cache_arr_χ)
+        cache_arr_χ[i] = (another[i] + cache_arr_χ[i]) * 0.5
+    end
+    return nothing
+end
+
 function post_phi!(cache_Φ::Array{T1}, cache_Gτχ::Array{T2}, down::T2= typemin(T2), up::T2= typemax(T2)) where {T1, T2}
     @inbounds for i = eachindex(cache_Φ)
         if cache_Gτχ[i] < down 

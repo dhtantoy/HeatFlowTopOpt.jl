@@ -34,6 +34,14 @@ using VideoIO
 
 export run_with_configs
 export domain2mp4
+export STABLE_BOUDARY, STABLE_CORRECT, STABLE_OLD, STABLE_RANDOM
+
+
+# stablization scheme 
+const STABLE_OLD = 0x0001
+const STABLE_RANDOM = 0x0010
+const STABLE_CORRECT = 0x0100
+const STABLE_BOUDARY = 0x1000
 
 
 include("utils.jl")
