@@ -31,7 +31,7 @@ vec_configs = [
     "pdsz" => 1,
 
     # top opt parameter
-    "correct_ratio" => 0.5,
+    "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 10., 
     "save_iter" => 1,
@@ -40,6 +40,8 @@ vec_configs = [
     "max_it" => 3,
     "InitType" => "Line",
     "stable_scheme" => STABLE_OLD | STABLE_RANDOM,
+    "stable_rand_rate" => 0.6,
+    "rand_kernel_dim" => 5,
 
     # model parameter
     "N" => 20,  # 240 for Line initialization, 240 ÷ 2 ÷ 20

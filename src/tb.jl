@@ -9,7 +9,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         N::Int = config["N"]
         ϵ = config["ϵ"]
         ϵ_ratio = config["ϵ_ratio"] 
-        correct_ratio = config["correct_ratio"]
         save_iter::Int = config["save_iter"]
         save_start::Int = config["save_start"]
         vol = config["vol"]
@@ -21,6 +20,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         InitType = config["InitType"]
         motion_tag = config["motion_tag"]
         stable_scheme::UInt = config["stable_scheme"]
+        correct_rate = config["correct_rate"]
+        stable_rand_rate = config["stable_rand_rate"]
+        rand_kernel_dim::Int = config["rand_kernel_dim"]
         
         # parameters corresponding to PDE
         β₁ = config["β₁"]
@@ -50,6 +52,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         τ = τ₀
+        rand_kernel_dim = (N+1) ÷ rand_kernel_dim
     end
 
     # ----------------------------------- Host output -----------------------------------
@@ -78,6 +81,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     cache_arr_χ₂ = similar(cache_arr_χ);
     cache_arr_Gτχ₂ = similar(cache_arr_Gτχ);
     cache_arr_rand_χ = similar(cache_arr_χ);
+    cache_rand_kernel = similar(cache_arr_χ, (rand_kernel_dim, rand_kernel_dim))
+
     volₖ = sum(cache_arr_χ) / length(cache_arr_χ);
     M = round(Int, length(cache_arr_χ) * vol);
     χ₀ = copy(cache_arr_χ);
@@ -202,10 +207,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # --------------------- post-process χ ---------------------------------
         if !iszero(stable_scheme & STABLE_OLD)
-            post_chi!(cache_arr_χ, arr_χ_old)
+            post_chi!(cache_arr_χ, arr_χ_old, 0.5)
         elseif !iszero(stable_scheme & STABLE_RANDOM)
-            random_chi!(cache_arr_rand_χ, M / length(cache_arr_χ), i);
-            post_chi!(cache_arr_χ, cache_arr_rand_χ)
+            random_chi!(cache_arr_rand_χ, cache_rand_kernel, M / length(cache_arr_χ), i);
+            post_chi!(cache_arr_χ, cache_arr_rand_χ, stable_rand_rate)
         end
         # ---------------------------------------------------------------------
 
@@ -236,7 +241,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     err_flag_in_iter = true
                     break
                 end
-                correct!(cache_arr_χ, correct_ratio, idx_decrease, idx_increase, cache_Φ)
+                correct!(cache_arr_χ, correct_rate, idx_decrease, idx_increase, cache_Φ)
 
                 get_ordered_idx!(idx_pick_post, cache_val_exist, cache_idx_exist, cache_arr_χ, cache_Φ)
                 
@@ -271,14 +276,15 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             image_χ = TBImage(cache_arr_χ, WH)
             @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
             @info "domain" χ= image_χ log_step_increment=0
-            @info "parameters" τ= τ  ϵ= curϵ log_step_increment=0
+            @info "parameters" τ= τ  ϵ= curϵ stable_rand_rate=stable_rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0
         end
+        
         if curϵ < ϵ
             update_tau!(motion, ϵ_ratio)
         end
-
         i += 1
+        stable_rand_rate *= 0.99
     end
 
     vtk_file_pvd[Float64(max_it + 1)] = createvtk(Ω, vtk_file_prefix * string(max_it + 1); 

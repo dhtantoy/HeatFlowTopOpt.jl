@@ -27,7 +27,7 @@ end
 
 vec_configs = [
     # pde parameter
-    "β₁" => [0., 100.],
+    "β₁" => [0., 30.],
     "β₂" => 0.,
     "β₃" => 1,
     "δt" => 8e-3,
@@ -50,7 +50,7 @@ vec_configs = [
     "motion_tag" => "conv",
 
     # top opt parameter
-    "correct_ratio" => 0.5,
+    "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 10., 
     "save_iter" => 30,
@@ -59,6 +59,8 @@ vec_configs = [
     "max_it" => 1000,
     "InitType" => ["Rand", "Line"],
     "stable_scheme" => [STABLE_OLD, STABLE_RANDOM, STABLE_OLD | STABLE_RANDOM],
+    "stable_rand_rate" => 0.6,
+    "rand_kernel_dim" => 5,
 
     # model parameter
     "N" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20

@@ -1,16 +1,25 @@
-function random_chi!(cache_arr_rand_χ::Array{T}, vol, i) where T
-    rand!(Random.seed!(i), cache_arr_rand_χ)
+function random_chi!(cache_arr_rand_χ, cache_rand_kernel, vol, i) 
+    rand!(Random.seed!(i), cache_rand_kernel)
+    T = eltype(cache_arr_rand_χ)
 
-    @turbo for i = eachindex(cache_arr_rand_χ)
-        cache_arr_rand_χ[i] = ifelse(cache_arr_rand_χ[i] <= vol, one(T), zero(T))
+    @turbo for j = eachindex(cache_rand_kernel)
+        cache_rand_kernel[j] = ifelse(cache_rand_kernel[j] <= vol, one(T), zero(T))
     end
+
+    m = size(cache_rand_kernel, 1)
+    n = size(cache_arr_rand_χ, 1)
+    a, b = divrem(n, m) 
+    I = ones(eltype(cache_rand_kernel), a, a)
+    c = b ÷ 2
+    kron!(view(cache_arr_rand_χ, c+1:c+a*m, c+1:c+a*m), cache_rand_kernel, I)
 
     return nothing
 end
 
-function post_chi!(cache_arr_χ, another)
+function post_chi!(cache_arr_χ, another, stable_rate)
+    r = 1 - stable_rate
     @turbo for i = eachindex(cache_arr_χ)
-        cache_arr_χ[i] = (another[i] + cache_arr_χ[i]) * 0.5
+        cache_arr_χ[i] = another[i] * stable_rate + cache_arr_χ[i] * r
     end
     return nothing
 end
