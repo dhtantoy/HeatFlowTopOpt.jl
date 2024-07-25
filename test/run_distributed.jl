@@ -2,11 +2,11 @@ using Distributed
 
 # # run at 138
 addprocs([
-            ("c95", 8),
-            ("c0130", 8),
-            # ("yhxiang@197", 16),
-            # ("c0123", 8),
-            # ("c0124", 8),
+            # ("c95", 8),
+            # ("c0130", 8),
+            ("yhxiang@197", 8),
+            ("c0123", 8),
+            ("c0124", 8),
         ], 
         tunnel= true,
         enable_threaded_blas= true,
@@ -27,7 +27,7 @@ end
 
 vec_configs = [
     # pde parameter
-    "β₁" => [0., 30.],
+    "β₁" => 0.,
     "β₂" => 0.,
     "β₃" => 1,
     "δt" => 8e-3,
@@ -58,15 +58,16 @@ vec_configs = [
     "vol" => [0.3, 0.5],
     "max_it" => 1000,
     "InitType" => ["Rand", "Line"],
-    "stable_scheme" => [STABLE_OLD, STABLE_RANDOM, STABLE_OLD | STABLE_RANDOM],
-    "stable_rand_rate" => 0.6,
-    "rand_kernel_dim" => 5,
+    "stable_scheme" => SCHEME_NULL,
+    "rand_scheme" => [RANDOM_WALK, RANDOM_CHANGE, RANDOM_WINDOW],
+    "rand_rate" => 0.5,
+    "rand_kernel_dim" => 4,
 
     # model parameter
     "N" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
-comments = "simpified, old/rand/old-rand, not commit"
+comments = "simpified, null stable, test for random, not commit"
 
 run_with_configs(vec_configs, comments)

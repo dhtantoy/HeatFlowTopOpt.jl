@@ -20,8 +20,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         InitType = config["InitType"]
         motion_tag = config["motion_tag"]
         stable_scheme::UInt = config["stable_scheme"]
+        rand_scheme::UInt = config["rand_scheme"]
         correct_rate = config["correct_rate"]
-        stable_rand_rate = config["stable_rand_rate"]
+        rand_rate = config["rand_rate"]
         rand_kernel_dim::Int = config["rand_kernel_dim"]
         
         # parameters corresponding to PDE
@@ -197,8 +198,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # --------------------- pre-process χ ---------------------------------
         ## update on the boundary
-        if !iszero(stable_scheme & STABLE_BOUDARY)
-            post_phi!(cache_Φ, cache_arr_Gτχ, down, up)
+        if !iszero(stable_scheme & STABLE_BOUNDARY)
+            bd_post_phi!(cache_Φ, cache_arr_Gτχ, down, up)
+        end
+        if !iszero(rand_scheme & RANDOM_CHANGE)
+            m = round(Int, rand_rate * M)
+            cache_perm = idx_pick_post.data
+            rand_post_phi!(cache_Φ, cache_perm, m, i)
         end
         # ---------------------------------------------------------------------
 
@@ -208,9 +214,15 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         # --------------------- post-process χ ---------------------------------
         if !iszero(stable_scheme & STABLE_OLD)
             post_chi!(cache_arr_χ, arr_χ_old, 0.5)
-        elseif !iszero(stable_scheme & STABLE_RANDOM)
-            random_chi!(cache_arr_rand_χ, cache_rand_kernel, M / length(cache_arr_χ), i);
-            post_chi!(cache_arr_χ, cache_arr_rand_χ, stable_rand_rate)
+        end
+        if !iszero(rand_scheme & RANDOM_WALK)
+            _vol = M / length(cache_arr_χ)
+            random_chi!(cache_arr_rand_χ, cache_rand_kernel, _vol, i);
+            post_chi!(cache_arr_χ, cache_arr_rand_χ, rand_rate)
+        elseif !iszero(rand_scheme & RANDOM_WINDOW)
+            window = cache_arr_rand_χ
+            random_chi!(window, cache_rand_kernel, rand_rate, i) 
+            post_window_chi!(cache_arr_χ, arr_χ_old, window)
         end
         # ---------------------------------------------------------------------
 
@@ -276,7 +288,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             image_χ = TBImage(cache_arr_χ, WH)
             @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
             @info "domain" χ= image_χ log_step_increment=0
-            @info "parameters" τ= τ  ϵ= curϵ stable_rand_rate=stable_rand_rate log_step_increment=0
+            @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0
         end
         
@@ -284,7 +296,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             update_tau!(motion, ϵ_ratio)
         end
         i += 1
-        stable_rand_rate *= 0.99
+        rand_rate *= 0.99
     end
 
     vtk_file_pvd[Float64(max_it + 1)] = createvtk(Ω, vtk_file_prefix * string(max_it + 1); 
@@ -347,9 +359,13 @@ function run_with_configs(vec_configs, comments)
 
 
     open(joinpath(path, "config.toml"), "w") do io
+        dict_vec_config = Dict(vec_configs)
+        dict_vec_config["rand_scheme"] = parse_random_scheme(dict_vec_config["rand_scheme"]) 
+        dict_vec_config["stable_scheme"] = parse_stable_scheme(dict_vec_config["stable_scheme"])
+        
         out = Dict(
             "info" => dict_info,
-            "vec_configs" => Dict(vec_configs),
+            "vec_configs" => dict_vec_config,
         )
         TOML.print(io, out) do el 
             if el isa Symbol
@@ -385,6 +401,13 @@ function run_with_configs(vec_configs, comments)
         tb_lg = TBLogger(tb_file_prefix, tb_overwrite, min_level=Logging.Info)
 
         if !isempty(multi_config)
+            if haskey(multi_config, "rand_scheme")
+                multi_config["rand_scheme"] = parse_random_scheme(multi_config["rand_scheme"]) 
+            end
+            if haskey(multi_config, "stable_scheme")
+                multi_config["stable_scheme"] = parse_stable_scheme(multi_config["stable_scheme"])
+            end
+            
             write_hparams!(tb_lg, multi_config, ["energy/E"])
         end
 

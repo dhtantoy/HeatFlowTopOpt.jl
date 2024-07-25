@@ -134,3 +134,46 @@ function domain2mp4(tb_path; subdirs::Union{Vector{String}, Vector{Int}, Nothing
     end
     return nothing
 end
+
+
+const STABLE_OLD = 0x0001
+const STABLE_CORRECT = 0x0100
+const STABLE_BOUNDARY = 0x1000
+
+const RANDOM_CHANGE = 0x0001
+const RANDOM_WALK = 0x0010
+const RANDOM_WINDOW = 0x0100
+
+const SCHEME_NULL = 0x0000
+
+parse_stable_scheme(s::Vector) = parse_stable_scheme.(s)
+function parse_stable_scheme(scheme::Unsigned)
+    ret = String[]
+    all_schemes = [
+        STABLE_OLD => "old",
+        STABLE_CORRECT => "correct",
+        STABLE_BOUNDARY => "boundary",
+    ] 
+    for (k, v) in all_schemes
+        if !iszero(scheme & k)
+            push!(ret, v)
+        end
+    end
+    return join(ret, '_')
+end
+
+parse_random_scheme(s::Vector) = parse_random_scheme.(s)
+function parse_random_scheme(scheme::Unsigned)
+    ret = String[]
+    all_schemes = [
+        RANDOM_CHANGE => "change",
+        RANDOM_WALK => "walk",
+        RANDOM_WINDOW => "window",
+    ] 
+    for (k, v) in all_schemes
+        if !iszero(scheme & k)
+            push!(ret, v)
+        end
+    end
+    return join(ret, '_')
+end

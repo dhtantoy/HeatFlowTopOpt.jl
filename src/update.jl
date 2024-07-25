@@ -24,7 +24,21 @@ function post_chi!(cache_arr_χ, another, stable_rate)
     return nothing
 end
 
-function post_phi!(cache_Φ::Array{T1}, cache_Gτχ::Array{T2}, down::T2= typemin(T2), up::T2= typemax(T2)) where {T1, T2}
+function post_window_chi!(cache_arr_χ, arr_χ_old, window)
+    @turbo for i = eachindex(cache_arr_χ)
+        cache_arr_χ[i] = arr_χ_old[i] + window[i] * (cache_arr_χ[i] - arr_χ_old[i])
+    end
+    return nothing
+end
+
+function post_window_chi!(cache_arr_χ, arr_χ_old, window, cache_arr_χ_old)
+    T = eltype(window)
+    @turbo for i = eachindex(cache_arr_χ)
+        cache_arr_χ[i] = window[i] * cache_arr_χ[i]   #window[i] * cache_arr_χ[i] + (one(T) - window[i]) * arr_χ_old[i]
+    end
+end 
+
+function bd_post_phi!(cache_Φ::Array{T1}, cache_Gτχ::Array{T2}, down::T2= typemin(T2), up::T2= typemax(T2)) where {T1, T2}
     @inbounds for i = eachindex(cache_Φ)
         if cache_Gτχ[i] < down 
             cache_Φ[i] = typemax(T1)
@@ -32,6 +46,16 @@ function post_phi!(cache_Φ::Array{T1}, cache_Gτχ::Array{T2}, down::T2= typemi
             cache_Φ[i] = typemin(T1)
         end
     end
+    return nothing
+end
+
+function rand_post_phi!(cache_Φ, cache_perm, m, i)
+    randperm!(Random.seed!(i), cache_perm)
+    T = eltype(cache_Φ)
+    @turbo for j = 1:m
+        cache_Φ[ cache_perm[j] ] = typemax(T)
+    end
+
     return nothing
 end
 

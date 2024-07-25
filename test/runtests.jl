@@ -40,7 +40,8 @@ vec_configs = [
     "max_it" => 3,
     "InitType" => "Line",
     "stable_scheme" => STABLE_OLD | STABLE_RANDOM,
-    "stable_rand_rate" => 0.6,
+    "rand_scheme" => SCHEME_NULL,
+    "rand_rate" => 0.6,
     "rand_kernel_dim" => 5,
 
     # model parameter
