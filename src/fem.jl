@@ -28,7 +28,7 @@ function initfefuncs(aux_space)
 end
 
 
-function initcachechis(InitType, aux_space; vol= 0.4, seed= 1)
+function initcachechis(InitType, aux_space; vol= 0.4, seed= 0)
     dim = get_triangulation(aux_space) |> num_point_dims
     np = num_free_dofs(aux_space)
     N_node::Int = np ^ (1//dim)
@@ -56,12 +56,11 @@ function initcachechis(InitType, aux_space; vol= 0.4, seed= 1)
                 cache_arr_χ[:, end .- I] .= 1
             end
         elseif InitType == "Rand"
-            Random.seed!(seed)
             m₁, m₂ = size(cache_arr_χ)
             c::Int = ceil(m₂ / 2)
             f::Int = floor(m₂ / 2)
             N = c * m₁
-            perm = randperm(N)
+            perm = randperm(Random.seed!(seed), N)
             M = round(Int, N * vol)
             cache_arr_χ[ perm[1:M] ] .= 1
 
@@ -112,15 +111,24 @@ function initspaces(model, dx, Td, ud)
     T_cell_dof_ids = get_cell_dof_ids(T_trial);
     X_cell_dof_ids = get_cell_dof_ids(X);
 
+    du = get_trial_fe_basis(T_trial)
+    dv = get_fe_basis(T_test)
+    iwq_T_A = integrate(du * dv, dx.quad)
+    rs_T_A = ([iwq_T_A], [T_cell_dof_ids], [T_cell_dof_ids])
     cache_T_b = allocate_vector(T_assem, (nothing, [T_cell_dof_ids]))
-    cache_T_A = allocate_matrix(T_assem, ([[1.]], [T_cell_dof_ids], [T_cell_dof_ids]))
+    cache_T_A = allocate_matrix(T_assem, rs_T_A)
+    assemble_matrix!(cache_T_A, T_assem, rs_T_A)
+    cache_T_LU = lu(cache_T_A)
 
     du, dp = get_trial_fe_basis(X)
     dv, dq = get_fe_basis(Y)
-    inte = ∫(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp)dx # + ∫(∇(dp)⋅ ∇(dq))dx
-    iwq = inte[dx.quad.trian];
+    iwq_V_A = integrate(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp, dx.quad)
+    # iwq_V_A = integrate(du⋅dv + ∇⋅du * dq + ∇⋅dv * dp + ∇(dp)⋅ ∇(dq), dx.quad)
+    rs_V_A = ([iwq_V_A], [X_cell_dof_ids], [X_cell_dof_ids])
     cache_V_b = allocate_vector(V_assem, (nothing, [X_cell_dof_ids]))
-    cache_V_A = allocate_matrix(V_assem, ([iwq], [X_cell_dof_ids], [X_cell_dof_ids]))
+    cache_V_A = allocate_matrix(V_assem, rs_V_A)
+    assemble_matrix!(cache_V_A, V_assem, rs_V_A)
+    cache_V_LU = lu(cache_V_A)
 
     # @info "preparing cache FEFunction for Th, Thˢ, uh, uhˢ..."
     T_n = get_free_dof_ids(T_trial) |> length
@@ -136,6 +144,7 @@ function initspaces(model, dx, Td, ud)
             (T_trial, X), # trial_spaces
             (T_assem, V_assem), # assemblers
             (cache_T_A, cache_V_A), # cache_As
+            (cache_T_LU, cache_V_LU), # cache_LUs
             (cache_T_b, cache_V_b), # cache_bs
             (cache_Th, cache_uh), # cache_fe_funcs
             (cache_Thˢ, cache_uhˢ) # cache_ad_fe_funcs
@@ -144,9 +153,9 @@ end
 """
 lapack solver.
 """
-@inline function solver(x, A, b)
+@inline function solver(x, A, fa, b)
     copy!(x, b)
-    fa = lu(A)
+    lu!(fa, A)
     ldiv!(fa, x)
     return nothing
 end
@@ -191,6 +200,7 @@ function pde_solve!(
     test_spaces, 
     trial_spaces, 
     cache_As, 
+    cache_lus,
     cache_bs, 
     assemblers,
     params,
@@ -202,6 +212,7 @@ function pde_solve!(
     T_test, Y = test_spaces
     T_trial, X = trial_spaces
     cache_T_A, cache_V_A = cache_As 
+    cache_T_LU, cache_V_LU = cache_lus
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
     χ, Gτχ, α, κ = motion_funcs
@@ -214,16 +225,20 @@ function pde_solve!(
     l_V((v, q)) = ∫( g ⋅ v)dΓin
     assemble_matrix!(a_V, cache_V_A, V_assem, X, Y)
     assemble_vector!(l_V, cache_V_b, V_assem, Y)
-    solver(uh.free_values.parent, cache_V_A, cache_V_b)
+    solver(uh.free_values.parent, cache_V_A, cache_V_LU, cache_V_b)
 
     a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
     l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
     assemble_matrix!(a_T, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_T, cache_T_b, T_assem, T_test)
-    solver(Th.free_values, cache_T_A, cache_T_b)
+    solver(Th.free_values, cache_T_A, cache_T_LU, cache_T_b)
     
     Ju = β₁/2*(μ* ∫(∇(uh)⊙∇(uh))dx + ∫(α*uh⋅uh)dx) |> sum
     Jγ = β₂ * sqrt(π/τ) * ∫(χ * (1 - Gτχ))dx |> sum
+
+    isnan(Jγ) && (Jγ = 0) 
+    isinf(Jγ) && (throw(DivideError()))
+
     Jt = β₃* ∫((Th - Ts)*κ*γ)dx |> sum
     return Ju, Jγ, Jt
 end
@@ -237,6 +252,7 @@ function adjoint_pde_solve!(
     test_spaces,
     trial_spaces,
     cache_As,
+    cache_lus,
     cache_bs,
     assemblers,
     params,
@@ -248,6 +264,7 @@ function adjoint_pde_solve!(
     T_test, Y = test_spaces
     T_trial, X = trial_spaces
     cache_T_A, cache_V_A = cache_As 
+    cache_T_LU, cache_V_LU = cache_lus
     cache_T_b, cache_V_b = cache_bs
     Th, uh = cache_fe_funcs
     _, _, α, κ = motion_funcs
@@ -259,13 +276,13 @@ function adjoint_pde_solve!(
     l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
     assemble_matrix!(a_Tˢ, cache_T_A, T_assem, T_trial, T_test)
     assemble_vector!(l_Tˢ, cache_T_b, T_assem, T_test)
-    solver(Thˢ.free_values, cache_T_A, cache_T_b)
+    solver(Thˢ.free_values, cache_T_A, cache_T_LU, cache_T_b)
 
     a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
     l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
     assemble_matrix!(a_Vˢ, cache_V_A, V_assem, X, Y)
     assemble_vector!(l_Vˢ, cache_V_b, V_assem, Y)   
-    solver(uhˢ.free_values.parent, cache_V_A, cache_V_b)
+    solver(uhˢ.free_values.parent, cache_V_A, cache_V_LU, cache_V_b)
 
     return nothing
 end
@@ -335,6 +352,9 @@ function Phi!(
     motion(cache_Φ, cache_node_val)
 
     r = β₂ * sqrt(π / τ)
+    isnan(r) && (r = 0)
+    isinf(r) && (throw(DivideError()))
+
     @turbo @. cache_Φ += r * (cache_arr_Gτχ₂ - cache_arr_Gτχ)
     
     copy!(cache_rev_Φ, cache_Φ)

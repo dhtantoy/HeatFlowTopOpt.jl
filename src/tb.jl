@@ -42,6 +42,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         Td = config["Td"]
         dim = config["dim"]
         L = config["L"]
+
+        τ₀ = iszero(rand_scheme & (RANDOM_WALK | RANDOM_CHANGE)) ? τ₀ : zero(τ₀)
         
         if motion_tag == "conv"
             motion = Conv(Float64, 2, N + 1, τ₀; time= 120);
@@ -63,6 +65,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             "PID" => getpid(),
             "UID" => parse(Int, readchomp(`id -u`)),
             "GID" => parse(Int, readchomp(`id -g`)),
+            "WORKER" => myid(),
         )   
         try 
             push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
@@ -82,7 +85,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     cache_arr_χ₂ = similar(cache_arr_χ);
     cache_arr_Gτχ₂ = similar(cache_arr_Gτχ);
     cache_arr_rand_χ = similar(cache_arr_χ);
-    cache_rand_kernel = similar(cache_arr_χ, (rand_kernel_dim, rand_kernel_dim))
+    cache_rand_kernel = similar(cache_arr_χ, (rand_kernel_dim, rand_kernel_dim));
 
     volₖ = sum(cache_arr_χ) / length(cache_arr_χ);
     M = round(Int, length(cache_arr_χ) * vol);
@@ -93,7 +96,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     motion_funcs = initfefuncs(aux_space);
 
     # init spaces
-    test_spaces, trial_spaces, assemblers, cache_As, cache_bs, fe_funcs, ad_fe_funcs = initspaces(model, dx, Td, ud)
+    test_spaces, trial_spaces, assemblers, cache_As, cache_lus, cache_bs, fe_funcs, ad_fe_funcs = initspaces(model, dx, Td, ud)
     
     # allocate cache for computing nodal value and Φ
     # (cache_Φ, cache_rev_Φ, cache_node_val)
@@ -106,7 +109,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     update_motion_funcs!(motion_funcs, cache_arrs, motion, params);
 
     params = (g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, motion.τ[])
-    J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
+    J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
                 params, motion_funcs, dx, dΓs)
     E = +(J...);
 
@@ -135,7 +138,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         copy!(arr_χ_old, cache_arr_χ);
 
         params = (N, Re, δt, δu, γ, β₃)
-        adjoint_pde_solve!(ad_fe_funcs, fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
+        adjoint_pde_solve!(ad_fe_funcs, fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
                         params, motion_funcs, dx)
 
         # all pde solved.
@@ -221,7 +224,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             post_chi!(cache_arr_χ, cache_arr_rand_χ, rand_rate)
         elseif !iszero(rand_scheme & RANDOM_WINDOW)
             window = cache_arr_rand_χ
-            random_chi!(window, cache_rand_kernel, rand_rate, i) 
+            random_chi!(window, cache_rand_kernel, max(rand_rate, 0.1), i) 
             post_window_chi!(cache_arr_χ, arr_χ_old, window)
         end
         # ---------------------------------------------------------------------
@@ -230,7 +233,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         coeffs = update_motion_funcs!(motion_funcs, cache_arrs, motion, params)
 
         params = (g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, motion.τ[])
-        J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
+        J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
                     params, motion_funcs, dx, dΓs)
         Ei = +(J...);
 
@@ -261,18 +264,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 coeffs = update_motion_funcs!(motion_funcs, cache_arrs, motion, params)
 
                 params = (g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, motion.τ[])
-                J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_bs, assemblers,
+                J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
                             params, motion_funcs, dx, dΓs)
                 Ei = +(J...)
             end
         end
 
-        τ = motion.τ[]
-        if τ < 1e-8 
-            @info "run_$(run_i): τ < 1e-8 and break iteration."
-            break
-        end
-        
         # inner iteration failed
         if err_flag_in_iter
             break
@@ -283,6 +280,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         volₖ = sum(cache_arr_χ) / length(cache_arr_χ)
         curϵ = norm(cache_arr_χ - arr_χ_old, 2)
+        τ = motion.τ[]
         debug && @info "run_$(run_i): J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(cache_arr_χ, WH)
@@ -393,6 +391,9 @@ function run_with_configs(vec_configs, comments)
     vtk_prefix = joinpath(path, "vtk")
     make_path(vtk_prefix, 0o753)
 
+    err_prefix = joinpath(path, "errors")
+    make_path(err_prefix, 0o753)
+
     pmap(eachindex(appended_config_arr)) do i
         multi_config = Dict(appended_config_arr[i])
         config = merge(base_config, multi_config)
@@ -413,20 +414,23 @@ function run_with_configs(vec_configs, comments)
 
         vtk_file_prefix = joinpath(vtk_prefix, "run_$(i)_")
         vtk_file_pvd = createpvd(vtk_file_prefix)
-       
-        χ₀, χ = singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, i)
-
-        jld2_file = joinpath(jld2_prefix, "run_$i.jld2")
-        jldopen(jld2_file, "w") do _file
-            _file["χ₀"] = χ₀
-            _file["χ"] = χ
-            _file["config"] = config
+        try
+            χ₀, χ = singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, i)
+            jld2_file = joinpath(jld2_prefix, "run_$i.jld2")
+            jldopen(jld2_file, "w") do _file
+                _file["χ₀"] = χ₀
+                _file["χ"] = χ
+                _file["config"] = config
+            end
+        catch e
+            open(joinpath(err_prefix, "run_$i.err"), "w") do io
+                println(io, current_exceptions())
+            end
+        finally
+            close(tb_lg)
+            savepvd(vtk_file_pvd)
+            nothing
         end
-
-        close(tb_lg);
-        savepvd(vtk_file_pvd);
-
-        nothing
     end
     return nothing
 end

@@ -27,6 +27,7 @@ using SparseArrays
 using DataFrames
 using ValueHistories
 using VideoIO
+using UnicodePlots
 
 # # always use OPENBLAS_NUM_THREADS=1 if your application is multithreaded while
 # # using OpenBLAS. This is to avoid oversubscription of threads.

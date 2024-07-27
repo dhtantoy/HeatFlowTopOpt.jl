@@ -179,9 +179,12 @@ end
 """
 update the parameter τ.
 """
-function update_tau!(conv::Conv, ratio) 
+function update_tau!(conv::Conv, ratio)
+    v = conv.τ[]
     conv.τ[] *= ratio
-    conv_kernel!(conv.shift_gauss, conv.τ[])
+    if !isapprox(v, conv.τ[])
+        conv_kernel!(conv.shift_gauss, conv.τ[])
+    end
     return nothing
 end
 
@@ -236,9 +239,12 @@ get_kernel(gf::GaussianFilter) = gf.kernel
 update the parameter τ.
 """
 function update_tau!(gf::GaussianFilter, ratio) 
+    v = gf.τ[]
     gf.τ[] *= ratio
     pdsz = get_pdsz(gf)
-    gaussian_kernel!(gf.kernel, gf.N, pdsz, gf.τ[])
+    if !isapprox(v, gf.τ[])
+        gaussian_kernel!(gf.kernel, gf.N, pdsz, gf.τ[])
+    end
     return nothing
 end
 
