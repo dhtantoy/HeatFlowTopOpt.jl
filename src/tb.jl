@@ -46,7 +46,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         τ₀ = iszero(rand_scheme & (RANDOM_WALK | RANDOM_CHANGE)) ? τ₀ : zero(τ₀)
         
         if motion_tag == "conv"
-            motion = Conv(Float64, 2, N + 1, τ₀; time= 120);
+            motion = Conv(Float64, 2, N + 1, τ₀; time= debug ? 1 : 120);
         elseif motion_tag == "gf"
             pdsz = config["pdsz"]
             motion = GaussianFilter(Float64, 2, N + 1, τ₀; pdsz= pdsz)
@@ -82,15 +82,15 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     
     # init χs and prepare cache for array.
     cache_arr_χ, cache_arr_Gτχ = initcachechis(InitType, aux_space; vol= vol);
-    cache_arr_χ₂ = similar(cache_arr_χ);
-    cache_arr_Gτχ₂ = similar(cache_arr_Gτχ);
-    cache_arr_rand_χ = similar(cache_arr_χ);
-    cache_rand_kernel = similar(cache_arr_χ, (rand_kernel_dim, rand_kernel_dim));
+    cache_arr_χ₂ = zero(cache_arr_χ);
+    cache_arr_Gτχ₂ = zero(cache_arr_Gτχ);
+    cache_arr_rand_χ = zero(cache_arr_χ);
+    cache_rand_kernel = zeros(eltype(cache_arr_χ), (rand_kernel_dim, rand_kernel_dim));
 
     volₖ = sum(cache_arr_χ) / length(cache_arr_χ);
     M = round(Int, length(cache_arr_χ) * vol);
     χ₀ = copy(cache_arr_χ);
-    arr_χ_old = similar(cache_arr_χ);
+    arr_χ_old = zero(cache_arr_χ);
 
     # init fe funcs 
     motion_funcs = initfefuncs(aux_space);
@@ -101,7 +101,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # allocate cache for computing nodal value and Φ
     # (cache_Φ, cache_rev_Φ, cache_node_val)
     cache_Φ = Matrix{Float64}(undef, N + 1, N + 1);
-    cache_Φs = (cache_Φ, similar(cache_Φ), similar(cache_Φ));
+    cache_Φs = (cache_Φ, zero(cache_Φ), zero(cache_Φ));
     
     debug && @info "run_$(run_i): computing initial energy ..."
     cache_arrs = (cache_arr_χ, cache_arr_χ₂, cache_arr_Gτχ, cache_arr_Gτχ₂);

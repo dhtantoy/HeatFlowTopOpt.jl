@@ -70,7 +70,7 @@ function initcachechis(InitType, aux_space; vol= 0.4, seed= 0)
         end
     end
 
-    cache_arr_Gτχ = similar(cache_arr_χ)
+    cache_arr_Gτχ = zero(cache_arr_χ)
     return cache_arr_χ, cache_arr_Gτχ
 end
 
