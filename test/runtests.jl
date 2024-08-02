@@ -39,7 +39,9 @@ vec_configs = [
     "vol" => 0.4,
     "max_it" => 3,
     "InitType" => "Line",
-    "stable_scheme" => STABLE_OLD | STABLE_RANDOM,
+    "InitFile" => "",
+    "InitKey" => "",
+    "stable_scheme" => [STABLE_CORRECT | STABLE_BOUNDARY, STABLE_CORRECT],
     "rand_scheme" => SCHEME_NULL,
     "rand_rate" => 0.6,
     "rand_kernel_dim" => 5,
@@ -58,7 +60,7 @@ map(eachindex(appended_config_arr)) do i
     pvd = createpvd(prefix)
 
     # debug
-    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= true)
+    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= false)
     savepvd(pvd)
 
 end

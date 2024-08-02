@@ -27,8 +27,7 @@ function initfefuncs(aux_space)
     return cache_fe_χ, cache_fe_Gτχ, cache_fe_α, cache_fe_κ
 end
 
-
-function initcachechis(InitType, aux_space; vol= 0.4, seed= 0)
+function initcachechis(InitType, aux_space; vol= 0.4, seed= 0, file="", key="")
     dim = get_triangulation(aux_space) |> num_point_dims
     np = num_free_dofs(aux_space)
     N_node::Int = np ^ (1//dim)
@@ -36,6 +35,11 @@ function initcachechis(InitType, aux_space; vol= 0.4, seed= 0)
     # @info "------------- generate χ₀ -------------"
     if InitType == "All"
         cache_arr_χ = ones(Float64, repeat([N_node], dim)...)
+    elseif InitType == "File"
+        isfile(file) || error("file not found! [$file]") |> throw
+        _f = load(file)
+        haskey(_f, key) || error("key not found! [$key]") |> throw
+        cache_arr_χ = _f[key]
     else
         cache_arr_χ = zeros(Float64, repeat([N_node], dim)...)
 

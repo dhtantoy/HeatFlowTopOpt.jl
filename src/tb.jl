@@ -18,6 +18,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         down = config["down"]
         τ₀ = config["τ₀"]
         InitType = config["InitType"]
+        InitFile = config["InitFile"]
+        InitKey = config["InitKey"]
         motion_tag = config["motion_tag"]
         stable_scheme::UInt = config["stable_scheme"]
         rand_scheme::UInt = config["rand_scheme"]
@@ -81,7 +83,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # ---------------------------------------------------------------------------------------------------------
     
     # init χs and prepare cache for array.
-    cache_arr_χ, cache_arr_Gτχ = initcachechis(InitType, aux_space; vol= vol);
+    cache_arr_χ, cache_arr_Gτχ = initcachechis(InitType, aux_space; vol= vol, file= InitFile, key= InitKey);
     cache_arr_χ₂ = zero(cache_arr_χ);
     cache_arr_Gτχ₂ = zero(cache_arr_Gτχ);
     cache_arr_rand_χ = zero(cache_arr_χ);
@@ -271,9 +273,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         # inner iteration failed
-        if err_flag_in_iter
-            break
-        end
+        err_flag_in_iter && break
 
         E = Ei
         time_in = time() - time_in
@@ -289,10 +289,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0
         end
+
+        τ < 1e-8 && break
+
+        curϵ < ϵ && update_tau!(motion, ϵ_ratio)
         
-        if curϵ < ϵ
-            update_tau!(motion, ϵ_ratio)
-        end
         i += 1
         rand_rate *= 0.99
     end
@@ -395,7 +396,7 @@ function run_with_configs(vec_configs, comments)
     make_path(err_prefix, 0o753)
 
     pmap(eachindex(appended_config_arr)) do i
-        multi_config = Dict(appended_config_arr[i])
+        multi_config = Dict{String, Any}(appended_config_arr[i])
         config = merge(base_config, multi_config)
 
         tb_file_prefix = joinpath(tb_path_prefix, "run_$i")

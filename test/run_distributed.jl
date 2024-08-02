@@ -2,11 +2,11 @@ using Distributed
 
 # # run at 138
 addprocs([
-            # ("c95", 8),
+            ("c95", 4),
             # ("c0130", 8),
-            ("yhxiang@197", 8),
-            ("c0123", 8),
-            ("c0124", 8),
+            # ("yhxiang@197", 8),
+            # ("c0123", 8),
+            # ("c0124", 8),
         ], 
         tunnel= true,
         enable_threaded_blas= true,
@@ -24,6 +24,8 @@ end
 @everywhere using MKL
 @everywhere using HeatFlowTopOpt
 
+jld2_file_path = "/export/home/tandh/JlProjects/HeatFlowTopOpt/data/2024-07-27T19_48_30/jld2/run_2.jld2"
+key = "χ"
 
 vec_configs = [
     # pde parameter
@@ -32,21 +34,21 @@ vec_configs = [
     "β₃" => 1,
     "δt" => 8e-3,
     "δu" => 5e-2,
-    "α⁻" => 417.5,
+    "α⁻" => 417.5 * 10,
     "kf" => 0.1624,
-    "ks" => 40.47,
+    "ks" => 40.07,
     "Re" => 5988.,
     "γ" => 1027.6,
     "Ts" => 1.,
     "ud⋅n" => 0.,
     "Td" => 0.0,
-    "g⋅n" => [30., 100.],
+    "g⋅n" => 30.,
     "Ts" => 1.,
 
     # motion paramter
     "up" => 0.95,
     "down" => 0.05,
-    "τ₀" => 3e-4,
+    "τ₀" => [5e-4, 5e-5],
     "motion_tag" => "conv",
 
     # top opt parameter
@@ -55,11 +57,13 @@ vec_configs = [
     "ϵ" => 10., 
     "save_iter" => 30,
     "save_start" => 0,
-    "vol" => [0.3, 0.5],
+    "vol" => 0.3,
     "max_it" => 1000,
-    "InitType" => ["Rand", "Line"],
-    "stable_scheme" => SCHEME_NULL,
-    "rand_scheme" => [RANDOM_WALK, RANDOM_CHANGE, RANDOM_WINDOW],
+    "InitType" => "File",
+    "InitFile" => jld2_file_path,
+    "InitKey" => key,
+    "stable_scheme" => [STABLE_CORRECT, STABLE_CORRECT | STABLE_BOUNDARY],
+    "rand_scheme" => SCHEME_NULL,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
@@ -68,6 +72,6 @@ vec_configs = [
     "dim" => 2,
     "L" => 1.
 ];
-comments = "simpified, null stable, test for random, not commit"
+comments = "restart for a larger α⁻"
 
 run_with_configs(vec_configs, comments)
