@@ -59,13 +59,27 @@ function rand_post_phi!(cache_Φ, cache_perm, m, i)
     return nothing
 end
 
+function rand_prob_post_phi!(cache_Φs, cache_idx, Φ_min, Φ_max)
+    cache_Φ, P, _ = cache_Φs
+    d = 1. / (length(cache_Φ) * Φ_max - sum(cache_Φ))
+    @turbo for i = eachindex(cache_Φ)
+        P[i] = d * (Φ_max - cache_Φ[i])
+    end
+    a = 1:length(P)
+    wv = pweights(P)
+    sample!(a, wv, cache_idx; replace= false)
+    cache_Φ[ cache_idx ] .= Φ_min - one(Φ_min)
+
+    return nothing
+end
+
 function iterateχ!(cache_χ, cache_Φ::Array{T}, idx_pick_post::SzVector{Int}, M) where {T}
     @turbo cache_χ .= zero(T)
 
     ix = idx_pick_post.data
 
     sortperm!(ix, vec(cache_Φ); alg=PartialQuickSort( Base.oneto(M) ))
-    curM = M 
+    curM = M + 1
 
     val = cache_Φ[ ix[M] ]
 
@@ -85,7 +99,7 @@ end
 """
 get the indices where χ=1 and then order it with value Φ
 """
-function get_ordered_idx!(idx_exist_sort::AbstractVector{Int}, cache_val_exist::SzVector{T2}, cache_idx_exist::SzVector{T1}, χ::Array{T1}, Φ::Array{T2}) where {T1, T2}
+function get_ordered_idx!(idx_exist_sort::AbstractVector, cache_val_exist::SzVector, cache_idx_exist::SzVector, χ, Φ)
     resize!(cache_val_exist, 0)
     resize!(cache_idx_exist, 0)
     @inbounds for i = eachindex(χ)

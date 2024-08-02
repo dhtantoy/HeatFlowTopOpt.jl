@@ -143,6 +143,7 @@ const STABLE_BOUNDARY = 0x1000
 const RANDOM_CHANGE = 0x0001
 const RANDOM_WALK = 0x0010
 const RANDOM_WINDOW = 0x0100
+const RANDOM_PROB = 0x1000
 
 const SCHEME_NULL = 0x0000
 
@@ -169,6 +170,7 @@ function parse_random_scheme(scheme::Unsigned)
         RANDOM_CHANGE => "change",
         RANDOM_WALK => "walk",
         RANDOM_WINDOW => "window",
+        RANDOM_PROB => "probability",
     ] 
     for (k, v) in all_schemes
         if !iszero(scheme & k)

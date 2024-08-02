@@ -124,7 +124,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # allocate cache for iteration and correction
     n = (N+1)^2;
     cache_val_exist = SzVector(Float64, n, 0);
-    cache_idx_exist = SzVector(Float64, n, 0);
+    cache_idx_exist = SzVector(Int, n, 0);
     idx_exist_sort_pre = SzVector(Int, n, 0);
     idx_pick_post = SzVector(Int, n, 0);
     idx_increase = SzVector(Int, n, 0);
@@ -202,10 +202,17 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         # --------------------- pre-process χ ---------------------------------
+        Φ_min, Φ_max = extrema(cache_Φ)
+        if !iszero(rand_scheme & RANDOM_PROB)
+            cache_idx = cache_idx_exist
+            resize!(cache_idx, M)
+            rand_prob_post_phi!(cache_Φs, cache_idx, Φ_min, Φ_max)
+        end
         ## update on the boundary
         if !iszero(stable_scheme & STABLE_BOUNDARY)
             bd_post_phi!(cache_Φ, cache_arr_Gτχ, down, up)
         end
+
         if !iszero(rand_scheme & RANDOM_CHANGE)
             m = round(Int, rand_rate * M)
             cache_perm = idx_pick_post.data
