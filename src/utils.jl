@@ -1,4 +1,3 @@
-#######  division of two array with a given weight array. #######
 """
     struct SzVector{T} <: AbstractVector{T}
 vector for efficiently pushing and resizing.
@@ -27,66 +26,64 @@ end
 
 
 """
-more efficient than `setdiff` for vectors ordered by a second vector.
-    note that the length of `i_pre_all` is `bgM` and `i_post_all` is `curM`, where `curM` ≤ `bgM`
-"""
-
-"""
-    computediffset!(i_dec, i_inc, iA, iB, Φ)
-efficiently compute the difference set of elements of a sorted vector `iA` and a given `iB`,
+    computediffset!(i_dec::Array, i_inc::Array, iA::AbstractArray, iB::AbstractArray, Φ::AbstractArray)
+efficiently compute the difference set of elements of two vectors `iA` and `iB`,
+which are sorted by a third vector `Φ`, i.e. `ϕ[ iA[j] ] ≤ ϕ[ iA[j+1] ]` and `ϕ[ iB[j] ] ≤ ϕ[ iB[j+1] ]` for all j.
 `iA` - `iB` is stored in `i_dec` and `iB` - `iA` is stored in `i_inc`. 
 """
-function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2}, idx_exist_sort_pre::AbstractVector{T1}, idx_pick_sort_post::AbstractVector{T2}, Φ::Array) where {T1, T2}
-    na = length(idx_exist_sort_pre)
-    nb = length(idx_pick_sort_post)
-    resize!(idx_decrease, 0)
-    resize!(idx_increase, 0) 
+function computediffset!(i_dec, i_inc, iA, iB, Φ) where {T1, T2}
+    na = length(iA)
+    nb = length(iB)
+    resize!(i_dec, 0)
+    resize!(i_inc, 0) 
     i = j = refi = refj = 1
 
-    while i <= na && j <= nb
-        iϕ = idx_exist_sort_pre[i]
-        jϕ = idx_pick_sort_post[j]
+    @inbounds while i <= na && j <= nb
+        iϕ = iA[i]
+        jϕ = iB[j]
         Δϕi = Φ[iϕ]
         Δϕj = Φ[jϕ]
         if Δϕi < Δϕj
-            push!(idx_decrease, iϕ)
+            push!(i_dec, iϕ)
             i += one(i)
             refi = i 
         elseif Δϕi > Δϕj
-            push!(idx_increase, jϕ)
+            push!(i_inc, jϕ)
             j += one(j)
             refj = j
         else    
-            if !_check_from_until(refj, idx_pick_sort_post, iϕ, Φ, Δϕi)
-                push!(idx_decrease, iϕ)
+            if !_check_from_until(refj, iB, iϕ, Φ, Δϕi)
+                push!(i_dec, iϕ)
             end
-            if !_check_from_until(refi, idx_exist_sort_pre, jϕ, Φ, Δϕj)
-                push!(idx_increase, jϕ)
+            if !_check_from_until(refi, iA, jϕ, Φ, Δϕj)
+                push!(i_inc, jϕ)
             end
             i += one(i)
             j += one(j)
-            if i <= na && Φ[ idx_exist_sort_pre[i] ] > Δϕi
+            if i <= na && Φ[ iA[i] ] > Δϕi
                 refj = j
             end
-            if j <= nb && Φ[ idx_pick_sort_post[j] ] > Δϕj
+            if j <= nb && Φ[ iB[j] ] > Δϕj
                 refi = i
             end
         end  
     end
     @inbounds for k = i:na
-        push!(idx_decrease, idx_exist_sort_pre[k])
+        push!(i_dec, iA[k])
     end
     @inbounds for k = j:nb
-        push!(idx_increase, idx_pick_sort_post[k])
+        push!(i_inc, iB[k])
     end
 end
 
 """
-more efficient than `in` for vectors ordered just for some positions.
+    _check_from_until(start::Ti, v::AbstractVector{Tv}, x::Tv, Δϕ::AbstractArray{Tp}, Δϕi::Tp)::Bool where {Ti <: Integer, Tv, Tp}
+check if `x` is in `v` from `start` to the last `i`th element with `Δϕ[ v[i] ] == Δϕi`. More efficient than `∈` for vectors ordered by a 
+second vector `Δϕ` in ascending order.
 """
-function _check_from_until(start::Integer, v::AbstractVector{T}, x::T, Δϕ::AbstractArray{T2}, Δϕi::T2)::Bool where {T, T2}
+function _check_from_until(start::Ti, v::AbstractVector{Tv}, x::Tv, Δϕ::AbstractArray{Tp}, Δϕi::Tp)::Bool where {Ti <: Integer, Tv, Tp}
     i = start
-    while Δϕ[ v[i] ] == Δϕi
+    @inbounds while Δϕ[ v[i] ] == Δϕi
         if v[i] == x
             return true
         end
@@ -95,7 +92,10 @@ function _check_from_until(start::Integer, v::AbstractVector{T}, x::T, Δϕ::Abs
     return false
 end
 
-
+"""
+    make_path(path::AbstractString, mode::UInt16)
+make a directory with `path` and set the mode of the directory to `mode`.
+"""
 function make_path(path::AbstractString, mode::UInt16)
     mkpath(path)
     chmod(path, mode)
@@ -104,6 +104,11 @@ end
 function TensorBoardLogger.deserialize_tensor_summary(::TensorBoardLogger.tensorboard.var"Summary.Value")
     return nothing 
 end
+
+"""
+    domain2mp4(tb_path::AbstractString; subdirs::Union{Vector{String}, Vector{Int}, Nothing}= nothing, [load_tag = "domain/χ"])
+convert the tensorboard data in `tb_path` to mp4 files and store it in the same directory.
+"""
 function domain2mp4(tb_path; subdirs::Union{Vector{String}, Vector{Int}, Nothing}= nothing, load_tag = "domain/χ")
     
     if isnothing(subdirs)
@@ -141,19 +146,16 @@ function domain2mp4(tb_path; subdirs::Union{Vector{String}, Vector{Int}, Nothing
     return nothing
 end
 
-
-const STABLE_OLD = 0x0001
-const STABLE_CORRECT = 0x0100
-const STABLE_BOUNDARY = 0x1000
-
-const RANDOM_CHANGE = 0x0001
-const RANDOM_WALK = 0x0010
-const RANDOM_WINDOW = 0x0100
-const RANDOM_PROB = 0x1000
-
-const SCHEME_NULL = 0x0000
-
+"""
+    parse_stable_scheme(s::Vector)
+convert the stable scheme from a vector of `Unsigned` to a vector of `String`.
+"""
 parse_stable_scheme(s::Vector) = parse_stable_scheme.(s)
+
+"""
+    parse_stable_scheme(scheme::Unsigned)
+convert the stable scheme from `Unsigned` to `String`.
+"""
 function parse_stable_scheme(scheme::Unsigned)
     ret = String[]
     all_schemes = [
@@ -169,7 +171,16 @@ function parse_stable_scheme(scheme::Unsigned)
     return join(ret, '_')
 end
 
+"""
+    parse_random_scheme(s::Vector)
+convert the random scheme from a vector of `Unsigned` to a vector of `String`.
+"""
 parse_random_scheme(s::Vector) = parse_random_scheme.(s)
+
+"""
+    parse_random_scheme(scheme::Unsigned)
+convert the random scheme from `Unsigned` to `String`.
+"""
 function parse_random_scheme(scheme::Unsigned)
     ret = String[]
     all_schemes = [

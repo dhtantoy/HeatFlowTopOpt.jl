@@ -39,6 +39,17 @@ export STABLE_BOUNDARY, STABLE_CORRECT, STABLE_OLD
 export RANDOM_WALK, RANDOM_CHANGE, RANDOM_WINDOW, RANDOM_PROB
 export SCHEME_NULL
 
+const STABLE_OLD = 0x0001
+const STABLE_CORRECT = 0x0100
+const STABLE_BOUNDARY = 0x1000
+
+const RANDOM_CHANGE = 0x0001
+const RANDOM_WALK = 0x0010
+const RANDOM_WINDOW = 0x0100
+const RANDOM_PROB = 0x1000
+
+const SCHEME_NULL = 0x0000
+
 include("utils.jl")
 include("motion.jl")
 include("fem.jl")
