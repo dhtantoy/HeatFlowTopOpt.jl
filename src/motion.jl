@@ -1,15 +1,39 @@
-# ------------- domain motion with curvature -------------
 """
-given an array, return the motion of the array.
+    abstract type Motion end
+
+Implementation of a smoother. the following interface should be implemented:
+
+- `(m::Motion)(out::Array, A::AbstractArray)`: compute the smoother of `A` and store the result in `out`.
+
+- `get_pdsz(m::Motion)`: return the padding size of the smoother.
+
+- `get_kernel(m::Motion)`: return the kernel of the smoother.
+
+- `update_tau!(m::Motion, ratio)`: update the parameter `τ` of the smoother with the given `ratio` (τ *= ratio) and recompute the kernel if necessary.
 """
 abstract type Motion end
-(m::Motion)(arg...) = error("method $(typeof(m)) for arguments $(arg...) is not defined.")
 
+(m::Motion)(out, A) = error("method $(typeof(m)) for arguments $(arg...) is not defined.")
+get_pdsz(m::Motion) = error("method get_pdsz for $(typeof(m)) is not defined.")
+get_kernel(m::Motion) = error("method get_kernel for $(typeof(m)) is not defined.")
+update_tau!(m::Motion, ratio) = error("method update_tau! for $(typeof(m)) is not defined.")
 
 ## -------------- convolution --------------
 """
-convolution. 
-Pd = (N - 1) >> 1 where N is the size of matrix accepted.
+    struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
+
+A convolution smoother. The kernel is a Gaussian function with standard deviation `τ`. The kernel is computed in the frequency domain using FFTW.
+
+# Constructor
+`Conv(T::Type, D::Int, N::Int, τ, [nth::Int= Threads.nthreads()]; <keyword arguments>)`
+
+# Arguments
+- `T`: the element type of the input array.
+- `D`: the number of dimensions of the input array.
+- `N`: the size of the input array in each dimension.
+- `τ`: the standard deviation of the Gaussian kernel.
+- `nth`: the number of threads to use for the FFTW computation.
+- `time`: the seconds limit for the FFTW planning.
 """
 struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
     shift_gauss::Array{T, D}   # fft of gaussian kernel
@@ -20,36 +44,35 @@ struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
     P_irfft::Tpi            # plan for irfft
     Conv(T::Type, D::Int, N::Int, τ, nth::Int= Threads.nthreads(); time= 1) = begin
         @assert isodd(N) "Nx must be odd."
-        @info "------------- convalution setting -------------"
         nth = min(nth, 4)
-        @info "setting the number of FFTW threads to $nth..."
         FFTW.set_num_threads(nth)
-        
         _sz = N - 1
         pdsz = _sz >> 1
-
-        @info "generating convalution kernel..."
         shift_gauss = conv_kernel(T, _sz, τ, Val(D))
-        
         rfftA = rfft(shift_gauss)
         irfftA = similar(shift_gauss)
-        
-        @info "planning for rfft..."
         P_rfft = plan_rfft(irfftA; flags= FFTW.PATIENT, timelimit= time)
-
-        @info "planning for irfft..."
         P_irfft = plan_irfft(rfftA, size(shift_gauss, 1); flags= FFTW.PATIENT, timelimit= time)
-        
-        @info "done."
-        @info "-------------------------------------------"
+       
         new{T, pdsz, D, N, eltype(rfftA), typeof(P_rfft), typeof(P_irfft)}(shift_gauss, Ref(convert(T, τ)), rfftA, irfftA, P_rfft, P_irfft)
     end
 end
+
+"""
+    get_pdsz(c::Conv{T, Pd})
+return the padding size of the convolution smoother.
+"""
 get_pdsz(::Conv{T, Pd}) where {T, Pd} = 2Pd
+
+"""
+    get_kernel(c::Conv)
+return the kernel of the convolution smoother.
+"""
 get_kernel(c::Conv) = c.shift_gauss
 
 """
-Pd denotes padding size. Pd = (N - 1) >> 1 where N is the size of Matrix accepted.
+    struct ExArray{T, Pd, D} <: AbstractArray{T, D}
+extend Array of `D`D with padding size `Pd`, and type of data is `T`.
 """
 struct ExArray{T, Pd, D} <: AbstractArray{T, D}
     A::Array{T, D}
@@ -75,7 +98,8 @@ function Base.show(io::IO, ::ExArray{T, Pd, D}) where {T, Pd, D}
 end
 
 """
-generate convalution kernel.
+    conv_kernel(T::Type, pdsz, τ, D)
+generate the kernel of the convolution smoother.
 """
 @generated function conv_kernel(::Type{T}, pdsz, τ, ::Val{D}) where {T, D}
     quote
@@ -85,6 +109,11 @@ generate convalution kernel.
         A
     end
 end
+
+"""
+    conv_kernel!(A::Array{T, D}, τ)
+generate the kernel of the convolution smoother and store it in `A`.
+"""
 @generated function conv_kernel!(A::Array{T, D}, τ) where {T, D}
     @fastmath quote
         m = size(A, 1)
@@ -122,7 +151,8 @@ end
 
 
 """
-compute convolution of A, remenber to copy the c.out if another convalution need to be computed soon.
+    (c::Conv{T, Pd, D, N})(out::Array{T, D}, A::Union{ExArray{T, Pd, D}, Array{T, D}})
+compute the convolution of `A` and store the result in `out`. Remember to copy the c.out if another convalution need to be computed soon.
 """
 @generated function (c::Conv{T1, Pd, D, N})(out::Array{T1, D}, A::ExArray{T2, Pd, D}) where {T1, T2, Pd, D, N}
     # used to optimized computation
@@ -169,7 +199,6 @@ compute convolution of A, remenber to copy the c.out if another convalution need
         $(sub)
     end
 end
-
 function (c::Conv)(out, A::Array)
     ExA = ExArray(A)
     c(out, ExA)
@@ -177,7 +206,8 @@ function (c::Conv)(out, A::Array)
 end
 
 """
-update the parameter τ.
+    update_tau!(conv::Conv, ratio)
+update the parameter `τ` of the convolution smoother with the given `ratio` (τ *= ratio) and recompute the kernel if necessary.
 """
 function update_tau!(conv::Conv, ratio)
     v = conv.τ[]
@@ -194,6 +224,19 @@ end
 
 
 ## -------------- weighted average filter --------------
+"""
+    struct GaussianFilter{T, D} <: Motion
+
+# Constructor
+`GaussianFilter(T::Type, D::Int, N::Int, τ; <keyword arguments>)`
+
+# Arguments
+- `T`: the element type of the input array.
+- `D`: the number of dimensions of the input array.
+- `N`: the size of the input array in each dimension.
+- `τ`: the standard deviation of the Gaussian kernel.
+- `pdsz`: the padding size of the Gaussian kernel.
+"""
 struct GaussianFilter{T, D} <: Motion
     kernel::Array{T, D}
     origin::CartesianIndex{D}
@@ -206,6 +249,10 @@ struct GaussianFilter{T, D} <: Motion
     end
 end
 
+"""
+    gaussian_kernel(T::Type, N::Int, pdsz::Int, τ)
+generate the kernel of the Gaussian filter.
+"""
 function gaussian_kernel(T::Type, N::Int, pdsz::Int, τ)
     sz = 2pdsz + one(pdsz)
     A = Array{T}(undef, sz, sz)
@@ -214,6 +261,10 @@ function gaussian_kernel(T::Type, N::Int, pdsz::Int, τ)
     return A
 end
 
+"""
+    gaussian_kernel!(A::Array, N::Int, pdsz::Int, τ)
+generate the kernel of the Gaussian filter and store it in `A`.
+"""
 function gaussian_kernel!(A::Array, N::Int, pdsz::Int, τ)
     τ̂ = N^2 * τ
     li = -pdsz:pdsz
@@ -233,10 +284,22 @@ function Base.show(io::IO, ::GaussianFilter{T, D}) where {T, D}
     """
     print(io, str)
 end
-get_pdsz(gf::GaussianFilter) = size(gf.kernel, 1) ÷ 2
-get_kernel(gf::GaussianFilter) = gf.kernel
+
 """
-update the parameter τ.
+    get_pdsz(gf::GaussianFilter)
+return the padding size of the Gaussian filter.
+"""
+get_pdsz(gf::GaussianFilter) = size(gf.kernel, 1) ÷ 2
+
+"""
+    get_kernel(gf::GaussianFilter)
+return the kernel of the Gaussian filter.
+"""
+get_kernel(gf::GaussianFilter) = gf.kernel
+
+"""
+    update_tau!(gf::GaussianFilter, ratio)
+update the parameter `τ` of the Gaussian filter with the given `ratio` (τ *= ratio) and recompute the kernel if necessary.
 """
 function update_tau!(gf::GaussianFilter, ratio) 
     v = gf.τ[]
@@ -248,6 +311,10 @@ function update_tau!(gf::GaussianFilter, ratio)
     return nothing
 end
 
+"""
+    (gf::GaussianFilter{T, D})(out::Array{T, D}, A::Matrix)
+compute the Gaussian filter of `A` and store the result in `out`.
+"""
 function (gf::GaussianFilter{T, 2})(out, A::Matrix) where T
     m, n = size(out)
     kernel = gf.kernel

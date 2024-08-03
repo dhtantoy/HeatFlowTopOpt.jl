@@ -59,7 +59,7 @@ function rand_post_phi!(cache_Φ, cache_perm, m, i)
     return nothing
 end
 
-function rand_prob_post_phi!(cache_Φs, cache_idx, Φ_min, Φ_max)
+function rand_prob_chi!(cache_Φs, cache_idx, Φ_min, Φ_max)
     cache_Φ, P, _ = cache_Φs
     d = 1. / (length(cache_Φ) * Φ_max - sum(cache_Φ))
     @turbo for i = eachindex(cache_Φ)
@@ -68,7 +68,6 @@ function rand_prob_post_phi!(cache_Φs, cache_idx, Φ_min, Φ_max)
     a = 1:length(P)
     wv = pweights(P)
     sample!(a, wv, cache_idx; replace= false)
-    cache_Φ[ cache_idx ] .= Φ_min - one(Φ_min)
 
     return nothing
 end
@@ -124,7 +123,7 @@ end
 """
 
 """
-function correct!(χ::Array{T}, θ, idx_decrease::AbstractVector, idx_increase::AbstractVector, Φ::Array) where T
+function correct_with_phi!(χ::Array{T}, θ, idx_decrease::AbstractVector, idx_increase::AbstractVector, Φ::Array) where T
     na = length(idx_decrease)
     nb = length(idx_increase)
     # @assert na != 0 && nb != 0 "length of `ia` and `ib` should not be equal to zero but ($(na), $(nb))"
@@ -134,17 +133,41 @@ function correct!(χ::Array{T}, θ, idx_decrease::AbstractVector, idx_increase::
 
     if ma > 0
         δ₁ = Φ[ idx_decrease[ma] ]
-        @inbounds @threads for i = eachindex(idx_decrease)
+        @inbounds for i = eachindex(idx_decrease)
             j = idx_decrease[i]
             χ[j] = ifelse(Φ[j] <= δ₁, one(T), zero(T))
         end
     end
     if mb > 0
         δ₂ = Φ[ idx_increase[ nb - mb + 1] ]
-        @inbounds @threads for i = eachindex(idx_increase)
+        @inbounds for i = eachindex(idx_increase)
             j = idx_increase[i]
             χ[j] = ifelse(Φ[j] >= δ₂, zero(T), one(T))
         end
     end
+end
+
+function correct_random!(χ, θ, idx_decrease, idx_increase, rand_idx_cache)
+    m = ceil(Int, length(χ) * θ)
+    na = length(idx_decrease)
+    nb = length(idx_increase)
+    T = eltype(χ)
+    i = 1
+    @inbounds while i <= m
+        j = rand_idx_cache[i]
+        if na > 0 && j in idx_decrease
+            χ[j] = one(T)
+            na -= 1
+        end
+        if nb > 0 && j in idx_increase
+            χ[j] = zero(T)
+            nb -= 1
+        end
+
+        na == 0 && nb == 0 && break
+        i += 1
+    end
+
+    return nothing
 end
 

@@ -1,6 +1,6 @@
 #######  division of two array with a given weight array. #######
-
 """
+    struct SzVector{T} <: AbstractVector{T}
 vector for efficiently pushing and resizing.
 """
 struct SzVector{T} <: AbstractVector{T}
@@ -30,16 +30,22 @@ end
 more efficient than `setdiff` for vectors ordered by a second vector.
     note that the length of `i_pre_all` is `bgM` and `i_post_all` is `curM`, where `curM` ≤ `bgM`
 """
-function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2}, idx_exist_sort_pre::AbstractVector{T1}, idx_pick_post::AbstractVector{T2}, Φ::Array) where {T1, T2}
+
+"""
+    computediffset!(i_dec, i_inc, iA, iB, Φ)
+efficiently compute the difference set of elements of a sorted vector `iA` and a given `iB`,
+`iA` - `iB` is stored in `i_dec` and `iB` - `iA` is stored in `i_inc`. 
+"""
+function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2}, idx_exist_sort_pre::AbstractVector{T1}, idx_pick_sort_post::AbstractVector{T2}, Φ::Array) where {T1, T2}
     na = length(idx_exist_sort_pre)
-    nb = length(idx_pick_post)
+    nb = length(idx_pick_sort_post)
     resize!(idx_decrease, 0)
     resize!(idx_increase, 0) 
     i = j = refi = refj = 1
 
     while i <= na && j <= nb
         iϕ = idx_exist_sort_pre[i]
-        jϕ = idx_pick_post[j]
+        jϕ = idx_pick_sort_post[j]
         Δϕi = Φ[iϕ]
         Δϕj = Φ[jϕ]
         if Δϕi < Δϕj
@@ -51,7 +57,7 @@ function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2},
             j += one(j)
             refj = j
         else    
-            if !_check_from_until(refj, idx_pick_post, iϕ, Φ, Δϕi)
+            if !_check_from_until(refj, idx_pick_sort_post, iϕ, Φ, Δϕi)
                 push!(idx_decrease, iϕ)
             end
             if !_check_from_until(refi, idx_exist_sort_pre, jϕ, Φ, Δϕj)
@@ -62,7 +68,7 @@ function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2},
             if i <= na && Φ[ idx_exist_sort_pre[i] ] > Δϕi
                 refj = j
             end
-            if j <= nb && Φ[ idx_pick_post[j] ] > Δϕj
+            if j <= nb && Φ[ idx_pick_sort_post[j] ] > Δϕj
                 refi = i
             end
         end  
@@ -71,7 +77,7 @@ function computediffset!(idx_decrease::SzVector{T1}, idx_increase::SzVector{T2},
         push!(idx_decrease, idx_exist_sort_pre[k])
     end
     @inbounds for k = j:nb
-        push!(idx_increase, idx_pick_post[k])
+        push!(idx_increase, idx_pick_sort_post[k])
     end
 end
 

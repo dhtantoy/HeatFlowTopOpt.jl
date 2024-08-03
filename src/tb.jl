@@ -129,6 +129,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     idx_pick_post = SzVector(Int, n, 0);
     idx_increase = SzVector(Int, n, 0);
     idx_decrease = SzVector(Int, n, 0);
+    rand_idx_cache = zeros(Int, n);
 
     debug && @info "----------------- start iteration ------------------"
 
@@ -202,12 +203,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         # --------------------- pre-process χ ---------------------------------
-        Φ_min, Φ_max = extrema(cache_Φ)
-        if !iszero(rand_scheme & RANDOM_PROB)
-            cache_idx = cache_idx_exist
-            resize!(cache_idx, M)
-            rand_prob_post_phi!(cache_Φs, cache_idx, Φ_min, Φ_max)
-        end
         ## update on the boundary
         if !iszero(stable_scheme & STABLE_BOUNDARY)
             bd_post_phi!(cache_Φ, cache_arr_Gτχ, down, up)
@@ -253,6 +248,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         err_flag_in_iter = false
         
         if !iszero(stable_scheme & STABLE_CORRECT)
+            Φ_min, Φ_max = extrema(cache_Φ)
+            if !iszero(rand_scheme & RANDOM_PROB)
+                rand_prob_chi!(cache_Φs, rand_idx_cache, Φ_min, Φ_max)
+            end 
             while Ei >= E
                 n_in_iter += 1
 
@@ -265,8 +264,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     err_flag_in_iter = true
                     break
                 end
-                correct!(cache_arr_χ, correct_rate, idx_decrease, idx_increase, cache_Φ)
-
+                # correct_with_phi!(cache_arr_χ, correct_rate, idx_decrease, idx_increase, cache_Φ)
+                correct_random!(cache_arr_χ, correct_rate, idx_decrease, idx_increase, rand_idx_cache)
                 get_ordered_idx!(idx_pick_post, cache_val_exist, cache_idx_exist, cache_arr_χ, cache_Φ)
                 
                 params = (α⁻, kf, ks)
