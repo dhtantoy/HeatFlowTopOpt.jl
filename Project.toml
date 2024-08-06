@@ -29,6 +29,7 @@ SparseMatricesCSR = "a0a7dd2c-ebf4-11e9-1f05-cf50bc540ca1"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 TensorBoardLogger = "899adc3e-224a-11e9-021f-63837185c80f"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 ValueHistories = "98cad3c8-aec3-5f06-8e41-884608649ab7"
 VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 

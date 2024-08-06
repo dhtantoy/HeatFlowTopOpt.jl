@@ -1,13 +1,15 @@
 using Distributed
 
 # # run at 138
-addprocs([
+addprocs(
+        [
             ("c95", 4),
-            # ("c0130", 8),
+            ("c0130", 4),
             # ("yhxiang@197", 8),
             # ("c0123", 8),
             # ("c0124", 8),
         ], 
+        # 2,
         tunnel= true,
         enable_threaded_blas= true,
         topology=:master_worker,
@@ -21,11 +23,8 @@ atexit() do
     end
 end
 
-@everywhere using MKL
+# @everywhere using MKL
 @everywhere using HeatFlowTopOpt
-
-jld2_file_path = "/export/home/tandh/JlProjects/HeatFlowTopOpt/data/2024-07-27T19_48_30/jld2/run_2.jld2"
-key = "χ"
 
 vec_configs = [
     # pde parameter
@@ -34,7 +33,7 @@ vec_configs = [
     "β₃" => 1,
     "δt" => 8e-3,
     "δu" => 5e-2,
-    "α⁻" => 417.5 * 10,
+    "α⁻" => 417.5,
     "kf" => 0.1624,
     "ks" => 40.07,
     "Re" => 5988.,
@@ -48,8 +47,8 @@ vec_configs = [
     # motion paramter
     "up" => 0.95,
     "down" => 0.05,
-    "τ₀" => [5e-4, 5e-5],
-    "motion_tag" => "conv",
+    "τ₀" => 5e-4,
+    "motion_type" => "conv",
 
     # top opt parameter
     "correct_rate" => 0.5,
@@ -58,12 +57,20 @@ vec_configs = [
     "save_iter" => 30,
     "save_start" => 0,
     "vol" => 0.3,
-    "max_it" => 1000,
-    "InitType" => "File",
-    "InitFile" => jld2_file_path,
-    "InitKey" => key,
-    "stable_scheme" => [STABLE_CORRECT, STABLE_CORRECT | STABLE_BOUNDARY],
-    "rand_scheme" => SCHEME_NULL,
+    "max_it" => 500,
+    "InitType" => "Rand",
+    "InitFile" => "",
+    "InitKey" => "",
+    "scheme" => [
+            SCHEME_NULL, 
+            SCHEME_CORRECT, 
+            SCHEME_BOUNDARY | SCHEME_CORRECT, 
+            SCHEME_OLD,
+            SCHEME_CHANGE,
+            SCHEME_WALK,
+            SCHEME_WINDOW,
+            SCHEME_R_CORRECT
+        ],
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
@@ -72,6 +79,6 @@ vec_configs = [
     "dim" => 2,
     "L" => 1.
 ];
-comments = "restart for a larger α⁻"
+comments = "debug"
 
 run_with_configs(vec_configs, comments)

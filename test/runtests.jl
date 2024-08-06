@@ -7,28 +7,26 @@ const lg = ConsoleLogger()
 vec_configs = [
     # pde parameter
     "β₁" => 0.,
-    "β₂" => 1.,
+    "β₂" => 0.,
     "β₃" => 1,
     "δt" => 8e-3,
-    "δu" => 1e-2,
+    "δu" => 5e-2,
     "α⁻" => 417.5,
-    "α₋" => 0.,
     "kf" => 0.1624,
-    "ks" => 40.47,
+    "ks" => 40.07,
     "Re" => 5988.,
     "γ" => 1027.6,
     "Ts" => 1.,
     "ud⋅n" => 0.,
     "Td" => 0.0,
-    "g⋅n" => 33.5,
+    "g⋅n" => 30.,
     "Ts" => 1.,
 
     # motion paramter
     "up" => 0.95,
     "down" => 0.05,
-    "τ₀" => 5e-4,
-    "motion_tag" => "conv", # conv
-    "pdsz" => 1,
+    "τ₀" => 1e-4,
+    "motion_type" => "conv",
 
     # top opt parameter
     "correct_rate" => 0.5,
@@ -36,20 +34,19 @@ vec_configs = [
     "ϵ" => 10., 
     "save_iter" => 1,
     "save_start" => 0,
-    "vol" => 0.4,
+    "vol" => 0.3,
     "max_it" => 3,
-    "InitType" => "Line",
+    "InitType" => "Rand",
     "InitFile" => "",
     "InitKey" => "",
-    "stable_scheme" => [STABLE_CORRECT | STABLE_BOUNDARY, STABLE_CORRECT],
-    "rand_scheme" => SCHEME_NULL,
-    "rand_rate" => 0.6,
-    "rand_kernel_dim" => 5,
+    "scheme" => [SCHEME_BOUNDARY, SCHEME_CORRECT, SCHEME_R_CORRECT],
+    "rand_rate" => 0.5,
+    "rand_kernel_dim" => 4,
 
     # model parameter
     "N" => 20,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
-    "L" => 1.,
+    "L" => 1.
 ];
 
 base_config, appended_config_arr = HeatFlowTopOpt.parse_vec_configs(vec_configs)

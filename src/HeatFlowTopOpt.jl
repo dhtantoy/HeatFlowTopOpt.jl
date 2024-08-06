@@ -35,20 +35,30 @@ using StatsBase: pweights, sample!
 
 export run_with_configs
 export domain2mp4
-export STABLE_BOUNDARY, STABLE_CORRECT, STABLE_OLD
-export RANDOM_WALK, RANDOM_CHANGE, RANDOM_WINDOW, RANDOM_PROB
-export SCHEME_NULL
+export SCHEME_NULL, SCHEME_BOUNDARY, SCHEME_CORRECT, SCHEME_OLD, SCHEME_WALK, SCHEME_CHANGE, SCHEME_WINDOW, SCHEME_R_CORRECT
 
-const STABLE_OLD = 0x0001
-const STABLE_CORRECT = 0x0100
-const STABLE_BOUNDARY = 0x1000
+# UInt16 at most 16 cases
+const U16_UNIT = 0x0001
 
-const RANDOM_CHANGE = 0x0001
-const RANDOM_WALK = 0x0010
-const RANDOM_WINDOW = 0x0100
-const RANDOM_PROB = 0x1000
+# ---- more details in codes.
+# ICTM
+const SCHEME_NULL = U16_UNIT >> 1
+# addition of χ_k, χ_{k+1}
+const SCHEME_OLD = U16_UNIT << 0
+# prediction-correction
+const SCHEME_CORRECT = U16_UNIT << 1
+# restrict to boundary
+const SCHEME_BOUNDARY = U16_UNIT << 2
+# randomly change χ_k and χ_{k+1}
+const SCHEME_CHANGE = U16_UNIT << 3
+# random noise of χ_k
+const SCHEME_WALK = U16_UNIT << 4
+# randomly partly update
+const SCHEME_WINDOW = U16_UNIT << 5
+# random correction with Φ
+const SCHEME_R_CORRECT = U16_UNIT << 6
 
-const SCHEME_NULL = 0x0000
+
 
 include("utils.jl")
 include("motion.jl")

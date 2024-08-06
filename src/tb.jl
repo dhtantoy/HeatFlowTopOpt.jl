@@ -1,8 +1,11 @@
+# cache_* denotes the cache for array-form variable with the same type and size.
+
+
 """
 simulation with on config and save the logs and results to vtk file.
 """
 function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= false)
-    # parameters
+    # ----------------------------------- config -----------------------------------
     begin 
         # independent parameters
         max_it = config["max_it"]
@@ -20,9 +23,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         InitType = config["InitType"]
         InitFile = config["InitFile"]
         InitKey = config["InitKey"]
-        motion_tag = config["motion_tag"]
-        stable_scheme::UInt = config["stable_scheme"]
-        rand_scheme::UInt = config["rand_scheme"]
+        motion_type = config["motion_type"]
+        scheme::Unsigned = config["scheme"]
         correct_rate = config["correct_rate"]
         rand_rate = config["rand_rate"]
         rand_kernel_dim::Int = config["rand_kernel_dim"]
@@ -45,22 +47,97 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         dim = config["dim"]
         L = config["L"]
 
-        τ₀ = iszero(rand_scheme & (RANDOM_WALK | RANDOM_CHANGE)) ? τ₀ : zero(τ₀)
+        @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
+
+        τ₀ = _is_scheme(SCHEME_WALK | SCHEME_CHANGE) ? zero(τ₀) : τ₀
         
-        if motion_tag == "conv"
+        if motion_type == "conv"
             motion = Conv(Float64, 2, N + 1, τ₀; time= debug ? 1 : 120);
-        elseif motion_tag == "gf"
+        elseif motion_type == "gf"
             pdsz = config["pdsz"]
             motion = GaussianFilter(Float64, 2, N + 1, τ₀; pdsz= pdsz)
         else
-            error("motion not defined!")
+            error("motion type not defined!")
         end
 
         τ = τ₀
+        h = 1 / N; 
+        δt *= h^2; 
+        δu *= h^2;
+        μ = 1/Re; 
         rand_kernel_dim = (N+1) ÷ rand_kernel_dim
     end
 
-    # ----------------------------------- Host output -----------------------------------
+    # ----------------------------------- model setting -----------------------------------  
+    model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify;
+    aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
+    # -------------------------------------------------------------------------------------
+
+    # ----------------------------------- cache for indicators ---------------------------
+    fe_χ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
+    fe_χ₂ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
+    fe_Gτχ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
+    fe_Gτχ₂ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
+    
+    # changes of `cache_fe_arr_*` alter the values of `fe_*`.
+    fe_arr_χ = init_chi!(fe_χ, InitType, aux_space; vol= vol, file= InitFile, key= InitKey);
+    fe_arr_χ₂ = reshape(fe_χ₂.free_values, size(fe_arr_χ));
+    fe_arr_Gτχ = reshape(fe_Gτχ.free_values, size(fe_arr_χ));
+    fe_arr_Gτχ₂ = reshape(fe_Gτχ₂.free_values, size(fe_arr_χ));
+
+    arr_rand_χ = zero(fe_arr_χ);
+    arr_rand_kernel = zeros(eltype(fe_arr_χ), (rand_kernel_dim, rand_kernel_dim));
+    arr_χ_old = zero(fe_arr_χ);
+    arr_χ₀ = copy(fe_arr_χ);
+    # -------------------------------------------------------------------------------------
+
+    # ----------------------------------- array-form Φ -------------------------
+    arr_Φ = Matrix{Float64}(undef, N + 1, N + 1);
+    cache_arr_Φ_1 = zero(arr_Φ);
+    cache_arr_Φ_2 = zero(arr_Φ);
+    # -----------------------------------------------------------------------
+
+    # ----------------------------------- problem-dependent setting -----------------------
+    ## heat-flow
+    trian = Triangulation(model);
+    bdtrain = BoundaryTriangulation(model; tags= 7);
+    dx = Measure(trian, 4);
+    dσ = Measure(bdtrain, 4);
+    α = α⁻ * fe_Gτχ₂; κ = kf * fe_Gτχ + ks * fe_Gτχ₂;
+    a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
+    l_V((v, q)) = ∫( g ⋅ v)dσ
+    VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(Val(:Stokes), trian, a_V, [5, 6], ud)
+    uh, _ = Xh; uhˢ, _ = Xhˢ;
+
+    a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
+    l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
+    T_test, T_trial, T_assem, T_A, T_LU, T_b, Th, Thˢ = init_single_space(Val(:FlowHeat), trian, a_T, [7], Td)
+
+    a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
+    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
+    a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
+    l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
+    
+    cell_fields = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
+    # -------------------------------------------------------------------------------------
+
+    # ----------------------------------- initial quantities -----------------------------------
+    debug && @info "run_$(run_i): computing initial energy ..."
+
+    volₖ = sum(fe_arr_χ) / length(fe_arr_χ);
+    M = round(Int, length(fe_arr_χ) * vol);
+    update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion) 
+    pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
+    pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+
+    Ju = β₁/2 * sum( a_V((uh, 0), (uh, 0)) )
+    Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+    @check_tau(Jγ)
+    Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
+    E = Ju + Jγ + Jt
+    # -------------------------------------------------------------------------------------
+
+    # ----------------------------------- log output -----------------------------------
     with_logger(tb_lg) do 
         dict_info = Dict(
             "LOGNAME" => ENV["LOGNAME"],
@@ -71,93 +148,54 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         )   
         try 
             push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
-        catch
+        catch; finally
+            image_χ = TBImage(fe_arr_χ, WH)
+            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt E= E
+            @info "domain" χ= image_χ log_step_increment=0
+            @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
         end
-        @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
     end
-
-    # ----------------------------------- model setting -----------------------------------  
-    model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify
-
-    aux_space, (Ω, _), (dx, dΓs) = initmodel(model, [[5, 6], 7, 8]);
-    # ---------------------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------
     
-    # init χs and prepare cache for array.
-    cache_arr_χ, cache_arr_Gτχ = initcachechis(InitType, aux_space; vol= vol, file= InitFile, key= InitKey);
-    cache_arr_χ₂ = zero(cache_arr_χ);
-    cache_arr_Gτχ₂ = zero(cache_arr_Gτχ);
-    cache_arr_rand_χ = zero(cache_arr_χ);
-    cache_rand_kernel = zeros(eltype(cache_arr_χ), (rand_kernel_dim, rand_kernel_dim));
-
-    volₖ = sum(cache_arr_χ) / length(cache_arr_χ);
-    M = round(Int, length(cache_arr_χ) * vol);
-    χ₀ = copy(cache_arr_χ);
-    arr_χ_old = zero(cache_arr_χ);
-
-    # init fe funcs 
-    motion_funcs = initfefuncs(aux_space);
-
-    # init spaces
-    test_spaces, trial_spaces, assemblers, cache_As, cache_lus, cache_bs, fe_funcs, ad_fe_funcs = initspaces(model, dx, Td, ud)
-    
-    # allocate cache for computing nodal value and Φ
-    # (cache_Φ, cache_rev_Φ, cache_node_val)
-    cache_Φ = Matrix{Float64}(undef, N + 1, N + 1);
-    cache_Φs = (cache_Φ, zero(cache_Φ), zero(cache_Φ));
-    
-    debug && @info "run_$(run_i): computing initial energy ..."
-    cache_arrs = (cache_arr_χ, cache_arr_χ₂, cache_arr_Gτχ, cache_arr_Gτχ₂);
-    params = (α⁻, kf, ks)
-    update_motion_funcs!(motion_funcs, cache_arrs, motion, params);
-
-    params = (g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, motion.τ[])
-    J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
-                params, motion_funcs, dx, dΓs)
-    E = +(J...);
-
-    with_logger(tb_lg) do 
-        image_χ = TBImage(cache_arr_χ, WH)
-        @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
-        @info "domain" χ= image_χ log_step_increment=0
-    end
-
-    # allocate cache for iteration and correction
+    # ----------------------------------- prepare for correction -----------------------
     n = (N+1)^2;
-    cache_val_exist = SzVector(Float64, n, 0);
-    cache_idx_exist = SzVector(Int, n, 0);
-    idx_exist_sort_pre = SzVector(Int, n, 0);
-    idx_pick_post = SzVector(Int, n, 0);
-    idx_increase = SzVector(Int, n, 0);
-    idx_decrease = SzVector(Int, n, 0);
-    rand_idx_cache = zeros(Int, n);
-
-    debug && @info "----------------- start iteration ------------------"
-
+    cache_sz_val = SzVector(Float64, n, 0);
+    cache_sz_idx = SzVector(Int, n, 0);
+    idx_A = SzVector(Int, n, 0);
+    idx_B = SzVector(Int, n, 0);
+    sorted_idx_inc = SzVector(Int, n, 0);
+    sorted_idx_dec = SzVector(Int, n, 0);
+    cache_arr_idx = cache_sz_idx.data
+    # -------------------------------------------------------------------------------------
+    
+    # ----------------------------------- iterations -----------------------------------
     i = 1
     while i <= max_it
         debug && @info "run_$(run_i) iteration $(i): "
-
         time_out = time()
-        copy!(arr_χ_old, cache_arr_χ);
 
-        params = (N, Re, δt, δu, γ, β₃)
-        adjoint_pde_solve!(ad_fe_funcs, fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
-                        params, motion_funcs, dx)
+        copy!(arr_χ_old, fe_arr_χ);
 
-        # all pde solved.
-        params = (β₁, β₂, β₃, α⁻, Ts, kf, ks, γ)
-        Phi!(cache_Φs, params, fe_funcs, ad_fe_funcs, aux_space, motion, cache_arr_Gτχ, cache_arr_Gτχ₂)
+        # ---- solve adjoint pde
+        pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+        pde_solve!(Xhˢ, a_Vˢ, l_Vˢ, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
 
+        # ---- now all pde solved, then compute Φ
+        ## base gradient of energy
+        fe_Φ = -α⁻ * (β₁/2*uh⋅uh + 2*uh⋅uhˢ) + (kf - ks)*(∇(Th)⋅∇(Thˢ)) + γ*(ks - kf)*((Ts - Th)*(Thˢ + β₃))
+        _compute_node_value!(cache_arr_Φ_1, fe_Φ, trian)
+        motion(arr_Φ, cache_arr_Φ_1)
+        ## perimeter of interface
+        _r = β₂ * sqrt(π / τ); @check_tau(_r);
+        @turbo @. arr_Φ += _r * (fe_arr_Gτχ₂ - fe_arr_Gτχ)
+        ## post-processing for symmetry
+        copy!(cache_arr_Φ_1, arr_Φ)
+        reverse!(cache_arr_Φ_1, dims= 2)
+        @turbo @. arr_Φ = (arr_Φ + cache_arr_Φ_1) / 2
+
+        # ---- saving data
         if i >= save_start && mod(i, save_iter) == 0
-            Th, uh = fe_funcs
-            fe_χ = motion_funcs[1]
             if debug
-                ret = Phi_debug(cache_Φs, params, fe_funcs, ad_fe_funcs, aux_space, motion, cache_arr_Gτχ, cache_arr_Gτχ₂)
-
-                # only support for uniform mesh grids.
-                V = get_fe_space(fe_χ)
-                Φ = FEFunction(V, vec(cache_Φ))
-                Thˢ, uhˢ = ad_fe_funcs
                 c_fs = [
                     "Th" => Th,
                     "∇(Th)" => ∇(Th),
@@ -168,153 +206,136 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     "uhˢ" => uhˢ, 
                     "∇⋅uhˢ" => divergence(uhˢ),
                     "χ" => fe_χ,
-                    "Φ" => Φ,
+                    "fe_Φ" => fe_Φ,
                     "uh⋅uhˢ" => uh⋅uhˢ,
                     "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
                     "(Th - Ts) * Thˢ" => (Ts - Th) * Thˢ,
                     "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
-
                     "- β₁/2 * α⁻ * uh⋅uh" => - β₁/2 * α⁻ * uh⋅uh,
-                    "- β₁/2 * α⁻ * Gτ(uh⋅uh)" => FEFunction(V, vec(ret[1])),
-
                     "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
-
-                    "β₃ * γ * (ks - kf) * Gτ(Ts - Th)" => FEFunction(V, vec(ret[4])),
-
                     "- α⁻ * (uh⋅uhˢ)" => - α⁻ * (uh⋅uhˢ),
-                    "- α⁻ * Gτ(uh⋅uhˢ)" => FEFunction(V, vec(ret[5])),
-
                     "(kf - ks) * ∇(Th)⋅∇(Thˢ)" => (kf - ks) * ∇(Th)⋅∇(Thˢ),
-                    "(kf - ks) * Gτ(∇T⋅∇Tˢ)" => FEFunction(V, vec(ret[6])),
-
                     "γ * (kf - ks) * (Th - Ts) * Thˢ" => γ * (kf - ks) * (Th - Ts) * Thˢ,
-                    "γ * (kf - ks) * Gτ((Th - Ts) * Thˢ)" => FEFunction(V, vec(ret[7])),
-                    
-                    "Φ̂" => - β₁/2 * α⁻ * uh⋅uh + 
-                            β₃ * γ * (ks - kf) * (Ts - Th) + 
-                            - α⁻ * (uh⋅uhˢ) + 
-                            (kf - ks) * ∇(Th)⋅∇(Thˢ) + 
-                            γ * (kf - ks) * (Th - Ts) * Thˢ,
                     ]
             else
-                c_fs = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
+                c_fs = cell_fields
             end
-            vtk_file_pvd[Float64(i)] =  createvtk(Ω, vtk_file_prefix * string(i); cellfields= c_fs)
+            vtk_file_pvd[Float64(i)] =  createvtk(trian, vtk_file_prefix * string(i); cellfields= c_fs)
         end
 
-        # --------------------- pre-process χ ---------------------------------
+        # ---- pre-process χ
+        Φ_min, Φ_max = extrema(arr_Φ)
         ## update on the boundary
-        if !iszero(stable_scheme & STABLE_BOUNDARY)
-            bd_post_phi!(cache_Φ, cache_arr_Gτχ, down, up)
+        _is_scheme(SCHEME_BOUNDARY) && post_phi!(arr_Φ, fe_arr_Gτχ, Φ_max, Φ_min, down, up)
+
+        ## random change
+        _is_scheme(SCHEME_CHANGE) && rand_post_phi!(arr_Φ, cache_arr_idx, Φ_max, round(Int, rand_rate * M), i)
+        
+        ## random correction
+        if _is_scheme(SCHEME_R_CORRECT)
+            P = cache_arr_Φ_1
+            weight = cache_arr_Φ_2
+            phi_to_prob!(P, arr_Φ, Φ_max)
+            prob_to_weight!(weight, P, cache_arr_idx)
+        else
+            weight = arr_Φ
         end
 
-        if !iszero(rand_scheme & RANDOM_CHANGE)
-            m = round(Int, rand_rate * M)
-            cache_perm = idx_pick_post.data
-            rand_post_phi!(cache_Φ, cache_perm, m, i)
+        # ---- iteration
+        ## get selected indices of χ_k in ascending order under weight
+        get_sorted_idx!(idx_A, cache_sz_val, cache_sz_idx, fe_arr_χ, weight);
+        ## get χ_{k + 1} and seleted indices in ascending order of it.
+        iterateχ!(fe_arr_χ, idx_B, arr_Φ, M);
+        _is_scheme(SCHEME_R_CORRECT) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
+
+        # ---- post-process χ 
+        _is_scheme(SCHEME_OLD) && post_chi!(fe_arr_χ, arr_χ_old, 0.5)
+
+        if _is_scheme(SCHEME_WALK)
+            _vol = M / length(fe_arr_χ)
+            random_window!(arr_rand_χ, arr_rand_kernel, _vol, i);
+            post_chi!(fe_arr_χ, arr_rand_χ, rand_rate)
         end
-        # ---------------------------------------------------------------------
-
-        get_ordered_idx!(idx_exist_sort_pre, cache_val_exist, cache_idx_exist, cache_arr_χ, cache_Φ);
-        iterateχ!(cache_arr_χ, cache_Φ, idx_pick_post, M);
-
-        # --------------------- post-process χ ---------------------------------
-        if !iszero(stable_scheme & STABLE_OLD)
-            post_chi!(cache_arr_χ, arr_χ_old, 0.5)
+        if _is_scheme(SCHEME_WINDOW)
+            window = arr_rand_χ
+            random_window!(window, arr_rand_kernel, max(rand_rate, 0.1), i) 
+            post_chi!(fe_arr_χ, arr_χ_old, window)
         end
-        if !iszero(rand_scheme & RANDOM_WALK)
-            _vol = M / length(cache_arr_χ)
-            random_chi!(cache_arr_rand_χ, cache_rand_kernel, _vol, i);
-            post_chi!(cache_arr_χ, cache_arr_rand_χ, rand_rate)
-        elseif !iszero(rand_scheme & RANDOM_WINDOW)
-            window = cache_arr_rand_χ
-            random_chi!(window, cache_rand_kernel, max(rand_rate, 0.1), i) 
-            post_window_chi!(cache_arr_χ, arr_χ_old, window)
-        end
-        # ---------------------------------------------------------------------
-
-        params = (α⁻, kf, ks)
-        coeffs = update_motion_funcs!(motion_funcs, cache_arrs, motion, params)
-
-        params = (g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, motion.τ[])
-        J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
-                    params, motion_funcs, dx, dΓs)
-        Ei = +(J...);
+        
+        # ---- compute energy
+        update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
+        ## solve pde with χ_{k+1} 
+        pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
+        pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+        ## energy
+        Ju = β₁/2 * sum( a_V((uh, 0), (uh, 0)) )
+        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+        @check_tau(Jγ)
+        Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
+        Ei = Ju + Jγ + Jt
 
         time_out = time() - time_out
         
+        # ---- prediction correction
         time_in = time()
         n_in_iter = 0
-        err_flag_in_iter = false
-        
-        if !iszero(stable_scheme & STABLE_CORRECT)
-            Φ_min, Φ_max = extrema(cache_Φ)
-            if !iszero(rand_scheme & RANDOM_PROB)
-                rand_prob_chi!(cache_Φs, rand_idx_cache, Φ_min, Φ_max)
-            end 
+        flag_in_iter_stop = false
+        if _is_scheme(SCHEME_CORRECT | SCHEME_R_CORRECT)
+            Ei >= E && computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
             while Ei >= E
                 n_in_iter += 1
-
-                n_in_iter > 20 && error("n_in_iter too big!")
-
-                computediffset!(idx_decrease, idx_increase, idx_exist_sort_pre, idx_pick_post, cache_Φ)
-
-                if length(idx_decrease) == 0 && length(idx_increase) == 0 
-                    @info "run_$(run_i): correction failed!" 
-                    err_flag_in_iter = true
+                if length(sorted_idx_dec) == 0 && length(sorted_idx_inc) == 0 
+                    flag_in_iter_stop = true
                     break
                 end
-                # correct_with_phi!(cache_arr_χ, correct_rate, idx_decrease, idx_increase, cache_Φ)
-                correct_random!(cache_arr_χ, correct_rate, idx_decrease, idx_increase, rand_idx_cache)
-                get_ordered_idx!(idx_pick_post, cache_val_exist, cache_idx_exist, cache_arr_χ, cache_Φ)
-                
-                params = (α⁻, kf, ks)
-                coeffs = update_motion_funcs!(motion_funcs, cache_arrs, motion, params)
 
-                params = (g, β₁, β₂, β₃, N, Re, δt, δu, γ, Ts, motion.τ[])
-                J = pde_solve!(fe_funcs, test_spaces, trial_spaces, cache_As, cache_lus, cache_bs, assemblers,
-                            params, motion_funcs, dx, dΓs)
-                Ei = +(J...)
+                nonsym_correct!(fe_arr_χ, sorted_idx_dec, sorted_idx_inc, θ)
+
+                # ---- compute energy
+                update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
+                ## solve pde with χ_{k+1} 
+                pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
+                pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+                ## energy
+                Ju = β₁/2 * sum( a_V((uh, 0), (uh, 0)) )
+                Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+                @check_tau(Jγ)
+                Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
+                Ei = Ju + Jγ + Jt
             end
         end
 
-        # inner iteration failed
-        err_flag_in_iter && break
+        # ---- inner iteration failed
+        if flag_in_iter_stop
+            @warn "inner iteration failed!"
+            break
+        end
 
-        E = Ei
-        time_in = time() - time_in
+        # ---- log output
+        time_in = n_in_iter == 0 ? 0. : time() - time_in
+        volₖ = sum(fe_arr_χ) / length(fe_arr_χ)
+        curϵ = norm(fe_arr_χ - arr_χ_old, 2)
 
-        volₖ = sum(cache_arr_χ) / length(cache_arr_χ)
-        curϵ = norm(cache_arr_χ - arr_χ_old, 2)
         τ = motion.τ[]
-        debug && @info "run_$(run_i): J = $(J), E = $E, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
+        debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
-            image_χ = TBImage(cache_arr_χ, WH)
-            @info "energy" E1= J[1] E2= J[2] E3= J[3] E= E
+            image_χ = TBImage(fe_arr_χ, WH)
+            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt E= E
             @info "domain" χ= image_χ log_step_increment=0
             @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0
         end
 
-        τ < 1e-8 && break
-
+        # ---- update quantities
         curϵ < ϵ && update_tau!(motion, ϵ_ratio)
-        
+        E = Ei
         i += 1
         rand_rate *= 0.99
     end
 
-    vtk_file_pvd[Float64(max_it + 1)] = createvtk(Ω, vtk_file_prefix * string(max_it + 1); 
-            cellfields=[
-                "Th" => fe_funcs[1], 
-                "Thˢ" => ad_fe_funcs[1],
-                "uh" => fe_funcs[2],
-                "uhˢ" => ad_fe_funcs[2],
-                "χ" => motion_funcs[1]
-            ]
-        )
+    vtk_file_pvd[Float64(max_it + 1)] = createvtk(trian, vtk_file_prefix * string(max_it + 1); cellfields= cell_fields)
 
-    return χ₀, cache_arr_χ
+    return arr_χ₀, fe_arr_χ
 end
 
 """
@@ -365,9 +386,8 @@ function run_with_configs(vec_configs, comments)
 
     open(joinpath(path, "config.toml"), "w") do io
         dict_vec_config = Dict(vec_configs)
-        dict_vec_config["rand_scheme"] = parse_random_scheme(dict_vec_config["rand_scheme"]) 
-        dict_vec_config["stable_scheme"] = parse_stable_scheme(dict_vec_config["stable_scheme"])
-        
+        dict_vec_config["scheme"] = parse_scheme(dict_vec_config["scheme"]) 
+
         out = Dict(
             "info" => dict_info,
             "vec_configs" => dict_vec_config,
@@ -409,11 +429,8 @@ function run_with_configs(vec_configs, comments)
         tb_lg = TBLogger(tb_file_prefix, tb_overwrite, min_level=Logging.Info)
 
         if !isempty(multi_config)
-            if haskey(multi_config, "rand_scheme")
-                multi_config["rand_scheme"] = parse_random_scheme(multi_config["rand_scheme"]) 
-            end
-            if haskey(multi_config, "stable_scheme")
-                multi_config["stable_scheme"] = parse_stable_scheme(multi_config["stable_scheme"])
+            if haskey(multi_config, "scheme")
+                multi_config["scheme"] = parse_scheme(multi_config["scheme"]) 
             end
             
             write_hparams!(tb_lg, multi_config, ["energy/E"])

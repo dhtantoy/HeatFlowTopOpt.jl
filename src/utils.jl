@@ -22,57 +22,75 @@ Base.resize!(v::SzVector, n::Int64)  = begin
         resize!(v.data, n +  ceil(Int, r / 10))
     end
     v.sz[] = n
+
+    return nothing
+end
+function lclip!(v::SzVector, n::Int64)
+    @assert v.sz[] >= n "the number of elements to shift should be less than or equal to the current size."
+
+    @inbounds for i = 1:v.sz[] - n
+        v.data[i] = v.data[i + n]
+    end
+    v.sz[] -= n
+    return nothing
+end
+function rclip!(v::SzVector, n::Int64)
+    v.sz[] -= n
+    return nothing
 end
 
 
+
 """
-    computediffset!(i_dec::Array, i_inc::Array, iA::AbstractArray, iB::AbstractArray, Φ::AbstractArray)
+    computediffset!(sort_i_dec::Array, sort_i_inc::Array, iA::AbstractArray, iB::AbstractArray, wv::AbstractArray)
 efficiently compute the difference set of elements of two vectors `iA` and `iB`,
-which are sorted by a third vector `Φ`, i.e. `ϕ[ iA[j] ] ≤ ϕ[ iA[j+1] ]` and `ϕ[ iB[j] ] ≤ ϕ[ iB[j+1] ]` for all j.
-`iA` - `iB` is stored in `i_dec` and `iB` - `iA` is stored in `i_inc`. 
+which are sorted by a third vector `wv`, i.e. `wv[ iA[j] ] ≤ wv[ iA[j+1] ]` and `wv[ iB[j] ] ≤ wv[ iB[j+1] ]` for all j.
+`iA` - `iB` is stored in `i_sort_i_decdec` and `iB` - `iA` is stored in `sort_i_inc` in ascending order. 
 """
-function computediffset!(i_dec, i_inc, iA, iB, Φ) where {T1, T2}
+function computediffset!(sort_i_dec, sort_i_inc, iA, iB, wv)
     na = length(iA)
     nb = length(iB)
-    resize!(i_dec, 0)
-    resize!(i_inc, 0) 
+    resize!(sort_i_dec, 0)
+    resize!(sort_i_inc, 0) 
     i = j = refi = refj = 1
 
     @inbounds while i <= na && j <= nb
         iϕ = iA[i]
         jϕ = iB[j]
-        Δϕi = Φ[iϕ]
-        Δϕj = Φ[jϕ]
+        Δϕi = wv[iϕ]
+        Δϕj = wv[jϕ]
         if Δϕi < Δϕj
-            push!(i_dec, iϕ)
+            push!(sort_i_dec, iϕ)
             i += one(i)
             refi = i 
         elseif Δϕi > Δϕj
-            push!(i_inc, jϕ)
+            push!(sort_i_inc, jϕ)
             j += one(j)
             refj = j
         else    
-            if !_check_from_until(refj, iB, iϕ, Φ, Δϕi)
-                push!(i_dec, iϕ)
+            if !_check_from_until(refj, iB, iϕ, wv, Δϕi)
+                push!(sort_i_dec, iϕ)
             end
-            if !_check_from_until(refi, iA, jϕ, Φ, Δϕj)
-                push!(i_inc, jϕ)
+            if !_check_from_until(refi, iA, jϕ, wv, Δϕj)
+                push!(sort_i_inc, jϕ)
             end
             i += one(i)
             j += one(j)
-            if i <= na && Φ[ iA[i] ] > Δϕi
+            if i <= na && wv[ iA[i] ] > Δϕi
                 refj = j
             end
-            if j <= nb && Φ[ iB[j] ] > Δϕj
+            if j <= nb && wv[ iB[j] ] > Δϕj
                 refi = i
             end
         end  
     end
+
+    # tail of vectors.
     @inbounds for k = i:na
-        push!(i_dec, iA[k])
+        push!(sort_i_dec, iA[k])
     end
     @inbounds for k = j:nb
-        push!(i_inc, iB[k])
+        push!(sort_i_inc, iB[k])
     end
 end
 
@@ -147,21 +165,25 @@ function domain2mp4(tb_path; subdirs::Union{Vector{String}, Vector{Int}, Nothing
 end
 
 """
-    parse_stable_scheme(s::Vector)
+    stable_scheme(s::Vector)
 convert the stable scheme from a vector of `Unsigned` to a vector of `String`.
 """
-parse_stable_scheme(s::Vector) = parse_stable_scheme.(s)
+parse_scheme(s::Vector) = parse_scheme.(s)
 
 """
-    parse_stable_scheme(scheme::Unsigned)
-convert the stable scheme from `Unsigned` to `String`.
+    parse_scheme(scheme::Unsigned)
+convert the scheme from `Unsigned` to `String`.
 """
-function parse_stable_scheme(scheme::Unsigned)
+function parse_scheme(scheme::Unsigned)
     ret = String[]
     all_schemes = [
-        STABLE_OLD => "old",
-        STABLE_CORRECT => "correct",
-        STABLE_BOUNDARY => "boundary",
+        SCHEME_OLD => "old",
+        SCHEME_CORRECT => "correct",
+        SCHEME_BOUNDARY => "boundary",
+        SCHEME_CHANGE => "change",
+        SCHEME_WALK => "walk",
+        SCHEME_WINDOW => "window",
+        SCHEME_R_CORRECT => "random_correct"
     ] 
     for (k, v) in all_schemes
         if !iszero(scheme & k)
@@ -171,28 +193,14 @@ function parse_stable_scheme(scheme::Unsigned)
     return join(ret, '_')
 end
 
-"""
-    parse_random_scheme(s::Vector)
-convert the random scheme from a vector of `Unsigned` to a vector of `String`.
-"""
-parse_random_scheme(s::Vector) = parse_random_scheme.(s)
 
-"""
-    parse_random_scheme(scheme::Unsigned)
-convert the random scheme from `Unsigned` to `String`.
-"""
-function parse_random_scheme(scheme::Unsigned)
-    ret = String[]
-    all_schemes = [
-        RANDOM_CHANGE => "change",
-        RANDOM_WALK => "walk",
-        RANDOM_WINDOW => "window",
-        RANDOM_PROB => "probability",
-    ] 
-    for (k, v) in all_schemes
-        if !iszero(scheme & k)
-            push!(ret, v)
+macro check_tau(val)
+    esc( quote
+        if isnan($val)
+            $val = 0.
+        elseif isinf($val)
+            throw(DivideError())
         end
-    end
-    return join(ret, '_')
+    end )
 end
+
