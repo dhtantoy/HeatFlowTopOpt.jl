@@ -93,7 +93,7 @@ function _test_and_trial_space(::Val{:Stokes}, trian, dtags, dval)
 
     return test, trial
 end
-function _test_and_trial_space(::Val{:FlowHeat}, trian, dtags, dval)
+function _test_and_trial_space(::Val{:Heat}, trian, dtags, dval)
     ref = ReferenceFE(lagrangian, Float64, 1)
     test = TestFESpace(trian, ref; conformity= :H1, dirichlet_tags= dtags)
     trial = TrialFESpace(test, dval)

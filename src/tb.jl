@@ -30,22 +30,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         rand_kernel_dim::Int = config["rand_kernel_dim"]
         
         # parameters corresponding to PDE
-        β₁ = config["β₁"]
-        β₂ = config["β₂"]
-        β₃ = config["β₃"]
-        α⁻ = config["α⁻"]
-        kf = config["kf"]
-        ks = config["ks"]
-        γ = config["γ"]
-        Ts = config["Ts"]
-        Re = config["Re"]
-        δt = config["δt"]
-        δu = config["δu"]
-        ud = VectorValue(config["ud⋅n"], 0.)
-        g = VectorValue(config["g⋅n"], 0.)
-        Td = config["Td"]
+        β = config["β"]
+        k1 = config["k1"]
+        k2 = config["k2"]
+        q1 = config["q1"]
+        q2 = config["q2"]
+        
         dim = config["dim"]
-        L = config["L"]
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
@@ -61,23 +52,19 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         τ = τ₀
-        h = 1 / N; 
-        δt *= h^2; 
-        δu *= h^2;
-        μ = 1/Re; 
         rand_kernel_dim = (N+1) ÷ rand_kernel_dim
     end
 
     # ----------------------------------- model setting -----------------------------------  
-    model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify;
+    model = CartesianDiscreteModel(repeat([0, 1.], dim), repeat([N], dim)) |> simplexify;
     aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- cache for indicators ---------------------------
     fe_χ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
     fe_χ₂ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
-    fe_Gτχ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
-    fe_Gτχ₂ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
+    fe_Gτχ = FEFunction(aux_space, ones(Float64, num_free_dofs(aux_space)));
+    fe_Gτχ₂ = FEFunction(aux_space, ones(Float64, num_free_dofs(aux_space)));
     
     # changes of `cache_fe_arr_*` alter the values of `fe_*`.
     fe_arr_χ = init_chi!(fe_χ, InitType, aux_space; vol= vol, file= InitFile, key= InitKey);
@@ -100,25 +87,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # ----------------------------------- problem-dependent setting -----------------------
     ## heat-flow
     trian = Triangulation(model);
-    bdtrain = BoundaryTriangulation(model; tags= 7);
     dx = Measure(trian, 4);
-    dσ = Measure(bdtrain, 4);
-    α = α⁻ * fe_Gτχ₂; κ = kf * fe_Gτχ + ks * fe_Gτχ₂;
-    a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
-    l_V((v, q)) = ∫( g ⋅ v)dσ
-    VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(Val(:Stokes), trian, a_V, [5, 6], ud)
-    uh, _ = Xh; uhˢ, _ = Xhˢ;
+    κ = k1 * fe_Gτχ + k2 * fe_Gτχ₂; q = q1 * fe_Gτχ + q2 * fe_Gτχ₂;
+    a(u, v) = ∫(∇(u) ⋅ ∇(v) * κ )dx
+    l(v) = ∫(q*v)dx
+    test, trial, assem, A, LU, b, Th, _ = init_single_space(Val(:Heat), trian, a, [7], 0.)
 
-    a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
-    l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
-    T_test, T_trial, T_assem, T_A, T_LU, T_b, Th, Thˢ = init_single_space(Val(:FlowHeat), trian, a_T, [7], Td)
-
-    a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
-    l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
-    a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
-    l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
-    
-    cell_fields = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
+    cell_fields = ["Th" => Th, "χ" => fe_χ]
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- initial quantities -----------------------------------
@@ -127,14 +102,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     volₖ = sum(fe_arr_χ) / length(fe_arr_χ);
     M = round(Int, length(fe_arr_χ) * vol);
     update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion) 
-    pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
-    pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+    pde_solve!(Th, a, l, test, trial, A, LU, b, assem)
 
-    Ju = β₁/2 * sum( a_V((uh, 0), (uh, 0)) )
-    Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+    Jγ = β * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
     @check_tau(Jγ)
-    Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-    E = Ju + Jγ + Jt
+    Jt = sum( l(Th) )
+    E = Jγ + Jt
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- log output -----------------------------------
@@ -150,7 +123,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
         catch; finally
             image_χ = TBImage(fe_arr_χ, WH)
-            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt E= E
+            @info "energy" Jγ= Jγ Jt= Jt E= E
             @info "domain" χ= image_χ log_step_increment=0
             @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
         end
@@ -177,16 +150,16 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         copy!(arr_χ_old, fe_arr_χ);
 
         # ---- solve adjoint pde
-        pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trial, T_A, T_LU, T_b, T_assem)
-        pde_solve!(Xhˢ, a_Vˢ, l_Vˢ, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
+        # Thˢ = - Th
+        # pde_solve!(Thˢ, a_Tˢ, l_Tˢ, test, trial, A, LU, b, assem)
 
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
-        fe_Φ = -α⁻ * (β₁/2*uh⋅uh + 2*uh⋅uhˢ) + (kf - ks)*(∇(Th)⋅∇(Thˢ)) + γ*(ks - kf)*((Ts - Th)*(Thˢ + β₃))
+        fe_Φ = 2*(q1-q2)*Th - (k1-k2)*(∇(Th)⋅∇(Th))
         _compute_node_value!(cache_arr_Φ_1, fe_Φ, trian)
         motion(arr_Φ, cache_arr_Φ_1)
         ## perimeter of interface
-        _r = β₂ * sqrt(π / τ); @check_tau(_r);
+        _r = β * sqrt(π / τ); @check_tau(_r);
         @turbo @. arr_Φ += _r * (fe_arr_Gτχ₂ - fe_arr_Gτχ)
         ## post-processing for symmetry
         copy!(cache_arr_Φ_1, arr_Φ)
@@ -195,32 +168,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- saving data
         if i >= save_start && mod(i, save_iter) == 0
-            if debug
-                c_fs = [
-                    "Th" => Th,
-                    "∇(Th)" => ∇(Th),
-                    "uh" => uh,
-                    "∇⋅uh" => divergence(uh), 
-                    "Thˢ" => Thˢ, 
-                    "∇(Thˢ)" => ∇(Thˢ),
-                    "uhˢ" => uhˢ, 
-                    "∇⋅uhˢ" => divergence(uhˢ),
-                    "χ" => fe_χ,
-                    "fe_Φ" => fe_Φ,
-                    "uh⋅uhˢ" => uh⋅uhˢ,
-                    "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
-                    "(Th - Ts) * Thˢ" => (Ts - Th) * Thˢ,
-                    "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
-                    "- β₁/2 * α⁻ * uh⋅uh" => - β₁/2 * α⁻ * uh⋅uh,
-                    "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
-                    "- α⁻ * (uh⋅uhˢ)" => - α⁻ * (uh⋅uhˢ),
-                    "(kf - ks) * ∇(Th)⋅∇(Thˢ)" => (kf - ks) * ∇(Th)⋅∇(Thˢ),
-                    "γ * (kf - ks) * (Th - Ts) * Thˢ" => γ * (kf - ks) * (Th - Ts) * Thˢ,
-                    ]
-            else
-                c_fs = cell_fields
-            end
-            vtk_file_pvd[Float64(i)] =  createvtk(trian, vtk_file_prefix * string(i); cellfields= c_fs)
+            vtk_file_pvd[Float64(i)] =  createvtk(trian, vtk_file_prefix * string(i); cellfields= cell_fields)
         end
 
         # ---- pre-process χ
@@ -265,14 +213,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         # ---- compute energy
         update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
         ## solve pde with χ_{k+1} 
-        pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
-        pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+        pde_solve!(Th, a, l, test, trial, A, LU, b, assem)
         ## energy
-        Ju = β₁/2 * sum( a_V((uh, 0), (uh, 0)) )
-        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+        Jγ = β * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
         @check_tau(Jγ)
-        Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-        Ei = Ju + Jγ + Jt
+        Jt = sum( l(Th) )
+        Ei = Jγ + Jt
 
         time_out = time() - time_out
         
@@ -294,14 +240,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 # ---- compute energy
                 update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
                 ## solve pde with χ_{k+1} 
-                pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
-                pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
+                pde_solve!(Th, a, l, test, trial, A, LU, b, assem)
                 ## energy
-                Ju = β₁/2 * sum( a_V((uh, 0), (uh, 0)) )
-                Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+                Jγ = β * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
                 @check_tau(Jγ)
-                Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-                Ei = Ju + Jγ + Jt
+                Jt = sum( l(Th) )
+                Ei = Jγ + Jt
             end
         end
 
@@ -317,10 +261,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         curϵ = norm(fe_arr_χ - arr_χ_old, 2)
 
         τ = motion.τ[]
-        debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
+        debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β = $β, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(fe_arr_χ, WH)
-            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt E= E
+            @info "energy" Jγ= Jγ Jt= Jt E= E
             @info "domain" χ= image_χ log_step_increment=0
             @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0

@@ -6,21 +6,11 @@ const lg = ConsoleLogger()
 
 vec_configs = [
     # pde parameter
-    "β₁" => 0.,
-    "β₂" => 0.,
-    "β₃" => 1,
-    "δt" => 8e-3,
-    "δu" => 5e-2,
-    "α⁻" => 417.5,
-    "kf" => 0.1624,
-    "ks" => 40.07,
-    "Re" => 5988.,
-    "γ" => 1027.6,
-    "Ts" => 1.,
-    "ud⋅n" => 0.,
-    "Td" => 0.0,
-    "g⋅n" => 30.,
-    "Ts" => 1.,
+    "β" => 20.,
+    "q1" => 1.,
+    "q2" => 100.,
+    "k1" => 10.,
+    "k2" => 1.,
 
     # motion paramter
     "up" => 0.95,
@@ -34,17 +24,17 @@ vec_configs = [
     "ϵ" => 10., 
     "save_iter" => 1,
     "save_start" => 0,
-    "vol" => 0.3,
-    "max_it" => 3,
+    "vol" => 0.2,
+    "max_it" => 5,
     "InitType" => "Rand",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => [SCHEME_BOUNDARY, SCHEME_CORRECT, SCHEME_R_CORRECT],
+    "scheme" => SCHEME_CORRECT,
     "rand_rate" => 0.5,
-    "rand_kernel_dim" => 4,
+    "rand_kernel_dim" => 10,
 
     # model parameter
-    "N" => 20,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "N" => 30,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
