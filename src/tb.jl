@@ -289,7 +289,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     break
                 end
 
-                nonsym_correct!(fe_arr_χ, sorted_idx_dec, sorted_idx_inc, θ)
+                nonsym_correct!(fe_arr_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
 
                 # ---- compute energy
                 update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
