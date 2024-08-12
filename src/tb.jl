@@ -40,7 +40,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
-        τ₀ = _is_scheme(SCHEME_WALK | SCHEME_CHANGE) ? zero(τ₀) : τ₀
+        if _is_scheme(SCHEME_WALK | SCHEME_CHANGE)
+            τ₀ = zero(τ₀)
+            β = 0.
+        end
         
         if motion_type == "conv"
             motion = Conv(Float64, 2, N + 1, τ₀; time= debug ? 1 : 120);
@@ -55,8 +58,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         rand_kernel_dim = (N+1) ÷ rand_kernel_dim
     end
 
-    # ----------------------------------- model setting -----------------------------------  
+    # ----------------------------------- model setting ----------------------------------- 
+    diri_tag = "dirichlet"
     model = CartesianDiscreteModel(repeat([0, 1.], dim), repeat([N], dim)) |> simplexify;
+    add_tag_by_filter!(model, x -> x[1] == 0. && 0.45 <= x[2] <= 0.55, diri_tag)
     aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
     # -------------------------------------------------------------------------------------
 
@@ -91,7 +96,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     κ = k1 * fe_Gτχ + k2 * fe_Gτχ₂; q = q1 * fe_Gτχ + q2 * fe_Gτχ₂;
     a(u, v) = ∫(∇(u) ⋅ ∇(v) * κ )dx
     l(v) = ∫(q*v)dx
-    test, trial, assem, A, LU, b, Th, _ = init_single_space(Val(:Heat), trian, a, [7], 0.)
+    test, trial, assem, A, LU, b, Th, _ = init_single_space(Val(:Heat), trian, a, diri_tag, 0.)
 
     cell_fields = ["Th" => Th, "χ" => fe_χ]
     # -------------------------------------------------------------------------------------
