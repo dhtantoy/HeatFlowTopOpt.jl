@@ -49,7 +49,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
-        τ₀ = _is_scheme(SCHEME_WALK | SCHEME_CHANGE) ? zero(τ₀) : τ₀
+        if _is_scheme(SCHEME_WALK | SCHEME_CHANGE)
+            τ₀ = zero(τ₀)
+            β₂ = 0.
+        end
         
         if motion_type == "conv"
             motion = Conv(Float64, 2, N + 1, τ₀; time= debug ? 1 : 120);
@@ -68,7 +71,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         rand_kernel_dim = (N+1) ÷ rand_kernel_dim
     end
 
-    # ----------------------------------- model setting -----------------------------------  
+    # ----------------------------------- model setting ----------------------------------- 
     model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify;
     aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
     # -------------------------------------------------------------------------------------
@@ -117,7 +120,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
     a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
     l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
-    
+
     cell_fields = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
     # -------------------------------------------------------------------------------------
 

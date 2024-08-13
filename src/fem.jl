@@ -27,13 +27,19 @@ function init_chi!(fe_χ, InitType, aux_space; vol= 0.4, seed= 0, file="", key="
                 cache_arr_χ[I, :] .= 1
                 cache_arr_χ[end .- I, :] .= 1
             end
-        elseif InitType == "Line"
+        elseif InitType == "Lines"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:4:end]
                 cache_arr_χ[:, I] .= 1
                 cache_arr_χ[:, end .- I] .= 1
             end
+
+        elseif InitType == "Line"
+            _n = round(Int, N_node * (1-vol) / 2)
+            cache_arr_χ[:, _n+1 : end-_n] .= 1
+            # cache_arr_χ[1, :] .= 1
+            # cache_arr_χ[end, :] .= 1
         elseif InitType == "Rand"
             m₁, m₂ = size(cache_arr_χ)
             c::Int = ceil(m₂ / 2)
@@ -93,7 +99,7 @@ function _test_and_trial_space(::Val{:Stokes}, trian, dtags, dval)
 
     return test, trial
 end
-function _test_and_trial_space(::Val{:FlowHeat}, trian, dtags, dval)
+function _test_and_trial_space(::Val{:Heat}, trian, dtags, dval)
     ref = ReferenceFE(lagrangian, Float64, 1)
     test = TestFESpace(trian, ref; conformity= :H1, dirichlet_tags= dtags)
     trial = TrialFESpace(test, dval)
@@ -176,7 +182,7 @@ end
 """
 add dirichlet tag for built-in cartesian mesh.
 """
-@generated function add_tag_by_filter!(m::CartesianDiscreteModel{D}, _filter, tag_name) where {D}
+@generated function add_tag_by_filter!(m::DiscreteModel{D}, _filter, tag_name) where {D}
     @assert D >= 2 "dimension should be greater than 2 but got $D"
     N = D - 2
     M = D - 1
@@ -199,20 +205,14 @@ add dirichlet tag for built-in cartesian mesh.
 
         is_updated = false
 
-        @inbounds for k = eachindex(face_to_vertices)
+        for k = eachindex(face_to_vertices)
             flag = true
             v_ids = face_to_vertices[k]
-            barycenter = zero(eltype(coors))
             for v_id in v_ids
                 x = coors[v_id]
                 flag *= _filter(x)
                 flag || break
-                barycenter += x
             end
-            if flag
-                flag *= _filter(barycenter)
-            end
-            
             @nexprs 1 _ -> if flag 
                 is_updated = true
                 cur_face_{$M - 1} =  top_faces[k]
