@@ -8,9 +8,9 @@ using Distributed
 using Random
 using LinearAlgebra
 using JLD2
-using TOML
+import TOML
 using Logging
-using Dates
+using Dates: now
 
 using Gridap
 using Gridap.Geometry
@@ -19,15 +19,19 @@ using Gridap.CellData
 using Gridap.FESpaces
 
 using LoopVectorization
-using Pipe
 using TensorBoardLogger
+import ProtoBuf as PB
 using FFTW
-using FillArrays
-using SparseArrays
+using FillArrays: Fill
+using SparseArrays: sparse
 using DataFrames
-using ValueHistories
-using VideoIO
+using ValueHistories: MVHistory
+using VideoIO: open_video_out
 using StatsBase: pweights, sample!
+using FileIO: save
+using Plots
+using Printf: Format, format, @sprintf
+
 
 # # always use OPENBLAS_NUM_THREADS=1 if your application is multithreaded while
 # # using OpenBLAS. This is to avoid oversubscription of threads.
@@ -58,6 +62,15 @@ const SCHEME_WINDOW = U16_UNIT << 5
 # random correction with Φ
 const SCHEME_R_CORRECT = U16_UNIT << 6
 
+const ALL_SCHEME_PAIRS = [
+    SCHEME_OLD => "old",
+    SCHEME_CORRECT => "correct",
+    SCHEME_BOUNDARY => "boundary",
+    SCHEME_CHANGE => "change",
+    SCHEME_WALK => "walk",
+    SCHEME_WINDOW => "window",
+    SCHEME_R_CORRECT => "random_correct"
+] 
 
 
 include("utils.jl")
@@ -65,4 +78,5 @@ include("motion.jl")
 include("fem.jl")
 include("update.jl")
 include("tb.jl")
+include("post.jl")
 end

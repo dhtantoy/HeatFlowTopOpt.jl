@@ -335,7 +335,7 @@ function run_with_configs(vec_configs, comments)
 
     open(joinpath(path, "config.toml"), "w") do io
         dict_vec_config = Dict(vec_configs)
-        dict_vec_config["scheme"] = parse_scheme(dict_vec_config["scheme"]) 
+        dict_vec_config["scheme"] = scheme_to_str(dict_vec_config["scheme"]) 
 
         out = Dict(
             "info" => dict_info,
@@ -379,7 +379,7 @@ function run_with_configs(vec_configs, comments)
 
         if !isempty(multi_config)
             if haskey(multi_config, "scheme")
-                multi_config["scheme"] = parse_scheme(multi_config["scheme"]) 
+                multi_config["scheme"] = scheme_to_str(multi_config["scheme"]) 
             end
             
             write_hparams!(tb_lg, multi_config, ["energy/E"])
