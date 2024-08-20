@@ -212,7 +212,7 @@ function parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{:DATA})
     argmin_id = map(argmin, eachcol(df[!, dfnames]))
   
     data = [
-       "tr"*join(["[$(_parse_item(Val(i == j), df[i, nm]))]" for (j, nm) in enumerate(dfnames)], "") for i = 1:nrow(df)
+       "tr"*join(["[$(_parse_item(Val(i == argmin_id[j]), df[i, nm]))]" for (j, nm) in enumerate(dfnames)], "") for i = 1:nrow(df)
     ]
   
     data_str = """
@@ -243,7 +243,7 @@ function my_output_typst(path)
     key = "scheme"
 
     post_path = joinpath(path, "post")
-    grp_results, df_typst_hp, df_typst_data = HeatFlowTopOpt.post_tb_data(key, scalar_tags, path)
+    grp_results, df_typst_hp, df_typst_data = post_tb_data(key, scalar_tags, path)
 
     open(joinpath(post_path, "main.typ"), "w") do io 
         print(io, """
@@ -255,8 +255,6 @@ function my_output_typst(path)
             print(io, parse_to_typ(grp_results[i], df_typst_hp, i))
             print(io, parse_to_typ(grp_results[i], df_typst_data))
         end
-        print(io, "#line(length: 100%, stroke: red + 2pt)")
-        
     end
 
     return nothing
