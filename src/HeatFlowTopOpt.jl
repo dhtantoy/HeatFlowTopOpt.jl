@@ -10,7 +10,7 @@ using LinearAlgebra
 using JLD2
 import TOML
 using Logging
-using Dates: now
+using Dates: now, format as dformat
 
 using Gridap
 using Gridap.Geometry
@@ -30,7 +30,7 @@ using VideoIO: open_video_out
 using StatsBase: pweights, sample!
 using FileIO: save
 using Plots
-using Printf: Format, format, @sprintf
+using Printf: Format, format as pformat, @sprintf
 
 
 # # always use OPENBLAS_NUM_THREADS=1 if your application is multithreaded while

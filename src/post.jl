@@ -169,7 +169,7 @@ end
 
 
 function _parse_item(::Val{F}, x::Float64) where F 
-    str = format(Format("%.1f"), x)
+    str = pformat(Format("%.1f"), x)
     if F 
         str = "#box(stroke: green, inset: 4pt)[$str]"
     end
