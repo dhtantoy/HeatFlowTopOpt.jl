@@ -3,8 +3,8 @@ using Distributed
 # # run at 138
 addprocs(
         [
-            ("c95", 4),
-            ("c0130", 4),
+            ("c95", 3),
+            ("c0130", 3),
             # ("yhxiang@197", 8),
             # ("c0123", 8),
             # ("c0124", 8),
@@ -23,16 +23,17 @@ atexit() do
     end
 end
 
-# @everywhere using MKL
+@everywhere using MKL
 @everywhere using HeatFlowTopOpt
 
 vec_configs = [
     # pde parameter
-    "β" => [20, 50],
+    "β" => 15.,
     "q1" => 1.,
     "q2" => 100.,
-    "k1" => [10., 50., 100.],
+    "k1" => 10.,
     "k2" => 1.,
+    "Td" => [0., 1., -1.],
 
     # motion paramter
     "up" => 0.95,
@@ -44,23 +45,14 @@ vec_configs = [
     "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 10., 
-    "save_iter" => 30,
+    "save_iter" => 300,
     "save_start" => 0,
     "vol" => 0.2,
-    "max_it" => 1000,
+    "max_it" => 200,
     "InitType" => ["Rand", "Line"],
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => [
-            SCHEME_NULL, 
-            SCHEME_CORRECT, 
-            SCHEME_BOUNDARY | SCHEME_CORRECT, 
-            SCHEME_OLD,
-            SCHEME_CHANGE,
-            SCHEME_WALK,
-            SCHEME_WINDOW,
-            SCHEME_R_CORRECT
-        ],
+    "scheme" => SCHEME_NULL,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
@@ -69,6 +61,6 @@ vec_configs = [
     "dim" => 2,
     "L" => 1.
 ];
-comments = "debug"
+comments = "zero dirichlet b.c. or not."
 
 run_with_configs(vec_configs, comments)

@@ -6,11 +6,12 @@ const lg = ConsoleLogger()
 
 vec_configs = [
     # pde parameter
-    "β" => 20.,
+    "β" => 15,
     "q1" => 1.,
     "q2" => 100.,
     "k1" => 10.,
     "k2" => 1.,
+    "Td" => 0.,
 
     # motion paramter
     "up" => 0.95,
@@ -22,19 +23,19 @@ vec_configs = [
     "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 10., 
-    "save_iter" => 1,
+    "save_iter" => 30,
     "save_start" => 0,
     "vol" => 0.2,
-    "max_it" => 5,
-    "InitType" => "Rand",
+    "max_it" => 10,
+    "InitType" => "Line",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => SCHEME_CORRECT,
+    "scheme" => SCHEME_CHANGE,
     "rand_rate" => 0.5,
-    "rand_kernel_dim" => 10,
+    "rand_kernel_dim" => 4,
 
     # model parameter
-    "N" => 30,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "N" => 600,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
@@ -47,7 +48,7 @@ map(eachindex(appended_config_arr)) do i
     pvd = createpvd(prefix)
 
     # debug
-    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= false)
+    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= true)
     savepvd(pvd)
 
 end

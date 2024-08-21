@@ -35,6 +35,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         k2 = config["k2"]
         q1 = config["q1"]
         q2 = config["q2"]
+        Td = config["Td"]
         
         dim = config["dim"]
 
@@ -96,7 +97,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     κ = k1 * fe_Gτχ + k2 * fe_Gτχ₂; q = q1 * fe_Gτχ + q2 * fe_Gτχ₂;
     a(u, v) = ∫(∇(u) ⋅ ∇(v) * κ )dx
     l(v) = ∫(q*v)dx
-    test, trial, assem, A, LU, b, Th, _ = init_single_space(Val(:Heat), trian, a, diri_tag, 0.)
+    test, trial, assem, A, LU, b, Th, _ = init_single_space(Val(:Heat), trian, a, diri_tag, Td)
 
     cell_fields = ["Th" => Th, "χ" => fe_χ]
     # -------------------------------------------------------------------------------------
