@@ -62,8 +62,8 @@ end
     initSingleSpace(::Val{Flag}, trian, a, dtags, dval)
 return test_space, trial_space, assembler, A, b, fe_func, ad_fe_func.
 """
-function init_single_space(::Val{Flag}, trian, a, dtags, dval) where {Flag}
-    test, trial = _test_and_trial_space(Val(Flag), trian, dtags, dval)
+function init_single_space(::Val{F}, trian, a, dtags, dval) where {F}
+    test, trial = _test_and_trial_space(Val(F), trian, dtags, dval)
     assem = SparseMatrixAssembler(trial, test)
     cell_dof_ids = get_cell_dof_ids(trial);
     du = get_trial_fe_basis(trial)
@@ -76,14 +76,14 @@ function init_single_space(::Val{Flag}, trian, a, dtags, dval) where {Flag}
     LU = lu(A)
 
     n = num_free_dofs(trial)
-    # `ones` for nonsingularity
+    # `ones` for nonsingularity of `lu(A)` of heat equations
     fe_func = FEFunction(trial, ones(Float64, n))
     ad_fe_func = FEFunction(test, ones(Float64, n))
     return test, trial, assem, A, LU, b, fe_func, ad_fe_func
 end
 
-function _test_and_trial_space(::Val{Flag}, args...) where {Flag}
-    error("Flag $Flag not defined!") |> throw
+function _test_and_trial_space(::Val{F}, args...) where {F}
+    error("flag $F not defined!") |> throw
 end
 function _test_and_trial_space(::Val{:Stokes}, trian, dtags, dval)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
@@ -136,8 +136,17 @@ end
 solve pde and update result `fe_func`.
 """
 function pde_solve!(fe_func, a, l, test, trial, A, LU, b, assem)
-    assemble_matrix!(a, A, assem, trial, test)
-    assemble_vector!(l, b, assem, test)
+    et = eltype(fe_func.free_values)
+    fill!(fe_func.free_values, zero(et))
+    uhd = fe_func
+
+    ϕ = get_trial_fe_basis(trial)
+    ψ = get_fe_basis(test)
+    matcontribs = a(ϕ, ψ)
+    veccontribs = l(ψ)
+    data = collect_cell_matrix_and_vector(trial, test, matcontribs, veccontribs, uhd)
+    assemble_matrix_and_vector!(A, b, assem, data)
+
     solver!(fe_func.free_values, A, LU, b)
 end
 
