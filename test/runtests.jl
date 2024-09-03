@@ -6,7 +6,7 @@ const lg = ConsoleLogger()
 
 vec_configs = [
     # pde parameter
-    "β" => 15,
+    "β" => 0.,
     "q1" => 1.,
     "q2" => 100.,
     "k1" => 10.,
@@ -16,21 +16,21 @@ vec_configs = [
     # motion paramter
     "up" => 0.95,
     "down" => 0.05,
-    "τ₀" => 1e-4,
+    "τ₀" => 1e-5,
     "motion_type" => "conv",
 
     # top opt parameter
     "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
-    "ϵ" => 10., 
-    "save_iter" => 30,
+    "ϵ" => 5., 
+    "save_iter" => 200,
     "save_start" => 0,
     "vol" => 0.2,
-    "max_it" => 10,
+    "max_it" => 200,
     "InitType" => "Line",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => SCHEME_CHANGE,
+    "scheme" => SCHEME_RAND_CORRECT,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
@@ -44,11 +44,11 @@ base_config, appended_config_arr = HeatFlowTopOpt.parse_vec_configs(vec_configs)
 map(eachindex(appended_config_arr)) do i
     config = merge(base_config, Dict(appended_config_arr[i]...))
     N = config["N"]
-    prefix = "vtk_test/simp_"
+    prefix = "vtk_test/heat_constant_q"
     pvd = createpvd(prefix)
 
     # debug
-    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= true)
+    HeatFlowTopOpt.singlerun(config, prefix*"_", pvd, lg, 1; debug= true)
     savepvd(pvd)
 
 end
