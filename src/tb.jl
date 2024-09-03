@@ -235,12 +235,16 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         _is_scheme(SCHEME_CHANGE) && rand_post_phi!(arr_Φ, cache_arr_idx, Φ_max, round(Int, rand_rate * M), i)
         
         ## random correction
-        if _is_scheme(SCHEME_R_CORRECT)
+        if _is_scheme(SCHEME_PROB_CORRECT)
             P = cache_arr_Φ_1
             weight = cache_arr_Φ_2
             phi_to_prob!(P, arr_Φ, Φ_max)
             prob_to_weight!(weight, P, cache_arr_idx)
-        else
+        elseif _is_scheme(SCHEME_RAND_CORRECT)
+            randperm!(Random.seed!(i), cache_arr_idx)
+            weight = cache_arr_Φ_2
+            weight[cache_arr_idx] = 1. :length(weight)
+        elseif _is_scheme(SCHEME_CORRECT)
             weight = arr_Φ
         end
 
@@ -248,8 +252,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         ## get selected indices of χ_k in ascending order under weight
         get_sorted_idx!(idx_A, cache_sz_val, cache_sz_idx, fe_arr_χ, weight);
         ## get χ_{k + 1} and seleted indices in ascending order of it.
+        ## note that `idx_B` for `SCHEME_CORRECT` is updated correctly too.
         iterateχ!(fe_arr_χ, idx_B, arr_Φ, M);
-        _is_scheme(SCHEME_R_CORRECT) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
+
+        ## get selected indices of χ_{k + 1} in ascending order under weight
+        ## for correction-scheme except `SCHEME_CORRECT`.
+        _is_scheme(SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
 
         # ---- post-process χ 
         _is_scheme(SCHEME_OLD) && post_chi!(fe_arr_χ, arr_χ_old, 0.5)
@@ -279,11 +287,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         time_out = time() - time_out
         
+
+        debug && display(heatmap(fe_arr_χ))
         # ---- prediction correction
         time_in = time()
         n_in_iter = 0
         flag_in_iter_stop = false
-        if _is_scheme(SCHEME_CORRECT | SCHEME_R_CORRECT)
+        if _is_scheme(SCHEME_CORRECT | SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT)
             Ei >= E && computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
             while Ei >= E
                 n_in_iter += 1
@@ -293,6 +303,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 end
 
                 nonsym_correct!(fe_arr_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
+
+                debug && display(heatmap(fe_arr_χ))
 
                 # ---- compute energy
                 update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
