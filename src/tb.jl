@@ -214,6 +214,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             randperm!(Random.seed!(i), cache_arr_idx)
             weight = cache_arr_Φ_2
             weight[cache_arr_idx] = 1. :length(weight)
+        elseif _is_scheme(SCHEME_CORRECT_REV)
+            weight = -arr_Φ
         else
             weight = arr_Φ
         end
@@ -227,7 +229,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         ## get selected indices of χ_{k + 1} in ascending order under weight
         ## for correction-scheme except `SCHEME_CORRECT`.
-        _is_scheme(SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
+        _is_scheme(remove_bitmode(SCHEME_ALL_CORRECT, SCHEME_CORRECT)) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
 
         # ---- post-process χ 
         _is_scheme(SCHEME_OLD) && post_interpolate!(fe_arr_χ, arr_χ_old, 0.5)
