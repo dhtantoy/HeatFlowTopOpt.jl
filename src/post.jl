@@ -7,7 +7,10 @@ struct DFTypst{T}
     names::Vector{String}
 end
 
-
+"""
+    _get_run_hparams(path::String)
+get the hyperparameters of a run from tensorboard log file located at `path`.
+"""
 function _get_run_hparams(path::String)
     file = first(readdir(path))
     f = open(joinpath(path, file), "r")
@@ -29,6 +32,10 @@ function _get_run_hparams(path::String)
     return hparams
 end
 
+"""
+    get_tb_hparams(tb_path::String)
+get the hyperparameters of all runs from tensorboard log files located at `tb_path`.
+"""
 function get_tb_hparams(tb_path::String)
     runs = parse_runs(tb_path)
     dfs = DataFrame()
@@ -41,6 +48,14 @@ function get_tb_hparams(tb_path::String)
     return dfs[!, Cols(Not("run_i"), "run_i")]
 end
 
+"""
+    get_run_data(path::String; kwargs...)
+get the raw data of a run in the form of `Dict` from tensorboard log file located at `path`.
+
+# Keyword Arguments
+- ignore_tags::Vector{Symbol}= [Symbol("host/base")]: tags to ignore
+- kwargs: other keyword arguments to pass to `TensorBoardLogger.map_summaries`
+"""
 function get_run_data(path::String; ignore_tags::Vector{Symbol}= [Symbol("host/base")], kwargs...)
     tb = TBReader(path)
     hist = MVHistory()
@@ -52,6 +67,10 @@ function get_run_data(path::String; ignore_tags::Vector{Symbol}= [Symbol("host/b
     return s
 end
 
+"""
+    parse_runs(tb_path::String, [runs::Union{Vector{String}, Vector{Int}, Nothing}])
+get the valid runs located at `tb_path` in the form of `Vector{String}` like `["run_1", "run_2", ...]`.
+"""
 function parse_runs(tb_path::String, runs::Union{Vector{String}, Vector{Int}, Nothing}= nothing)
     if isnothing(runs)
         runs = readdir(tb_path)
@@ -68,6 +87,13 @@ function parse_runs(tb_path::String, runs::Union{Vector{String}, Vector{Int}, No
     return valid_runs
 end
 
+"""
+    domain2mp4(tb_path::String, [runs]; kwargs...)
+convert the domain images of one, several or all runs to mp4 video which will be stored in `tb_path`.
+
+# Keyword Arguments
+- fr::Int= 5: frame rate of the video
+"""
 function domain2mp4(tb_path, runs= nothing; fr::Int= 5)
     runs = parse_runs(tb_path, runs)
     
@@ -97,6 +123,15 @@ end
 
 Plots.plot!(::Nothing, args...; kwargs...) = nothing
 Plots.png(::Nothing, args...; kwargs...) = nothing
+
+"""
+    post_tb_data(key::String, scalar_tags::Matrix{String}, data_path::String; kwargs...)    
+post-process the saclar data with tag `scalar_tags` and images data with tag `image_tag` in `data_path`
+and group them by `key`.  
+
+# Keyword Arguments
+- image_tag::String= "domain/χ": the tag of the domain images
+"""
 function post_tb_data(key, scalar_tags::Matrix{String}, data_path::String; image_tag::String = "domain/χ")
     tb_path = joinpath(data_path, "tb")
     @assert isdir(tb_path) "tb path does not exist."
@@ -167,7 +202,10 @@ function post_tb_data(key, scalar_tags::Matrix{String}, data_path::String; image
 end
 
 
-
+"""
+    _parse_item(::Val{F}, x::Union{Float64, DFImage, Any}) where F
+parse the item `x` to string.
+"""
 function _parse_item(::Val{F}, x::Float64) where F 
     str = pformat(Format("%.1f"), x)
     if F 
@@ -177,6 +215,11 @@ function _parse_item(::Val{F}, x::Float64) where F
 end
 _parse_item(::Val{F}, x::DFImage) where F = "#image(\"$(x.subpath)\")"
 _parse_item(::Val{F}, x) where F = string(x)
+
+"""
+    parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{Union{:HP, :DATA}}, grp_id)
+parse the hyperparameters (`:HP`) or data (`:DATA`) of `df` which is `grp_id`th subgroup to typst string.
+"""
 function parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{:HP}, grp_id)
     dfnames = dftyp.names
     n = length(dfnames)
@@ -236,6 +279,14 @@ function parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{:DATA})
     return data_str
 end
 
+"""
+    my_output_typst(path; kwargs...)
+output the typst file of the post-processed data in `path`.
+
+# Keyword Arguments
+- key::String= "scheme": the key to group the data
+- tags::Vector{String}= ["energy/E" "energy/Jt"]: the tags of the data
+"""
 function my_output_typst(path; key= "scheme", tags= ["energy/E" "energy/Jt"])
     post_path = joinpath(path, "post")
     grp_results, df_typst_hp, df_typst_data = post_tb_data(key, tags, path)
