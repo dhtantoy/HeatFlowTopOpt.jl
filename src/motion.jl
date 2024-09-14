@@ -7,6 +7,8 @@ Implementation of a smoother. the following interface should be implemented:
 
 - `get_pdsz(m::Motion)`: return the padding size of the smoother.
 
+- `get_tau(m::Motion)`: return the parameter `τ` of the smoother.
+
 - `get_kernel(m::Motion)`: return the kernel of the smoother.
 
 - `update_tau!(m::Motion, ratio)`: update the parameter `τ` of the smoother with the given `ratio` (τ *= ratio) and recompute the kernel if necessary.
@@ -15,6 +17,7 @@ abstract type Motion end
 
 (m::Motion)(out, A) = error("method $(typeof(m)) for arguments $(arg...) is not defined.")
 get_pdsz(m::Motion) = error("method get_pdsz for $(typeof(m)) is not defined.")
+get_tau(m::Motion) = error("method get_tau for $(typeof(m)) is not defined.")
 get_kernel(m::Motion) = error("method get_kernel for $(typeof(m)) is not defined.")
 update_tau!(m::Motion, ratio) = error("method update_tau! for $(typeof(m)) is not defined.")
 
@@ -57,6 +60,12 @@ struct Conv{T, Pd, D, N, Tc, Tp, Tpi} <: Motion
         new{T, pdsz, D, N, eltype(rfftA), typeof(P_rfft), typeof(P_irfft)}(shift_gauss, Ref(convert(T, τ)), rfftA, irfftA, P_rfft, P_irfft)
     end
 end
+
+"""
+    get_tau(c::Conv)
+return the parameter `τ` of the convolution smoother.
+"""
+get_tau(c::Conv) = c.τ[]
 
 """
     get_pdsz(c::Conv{T, Pd})
@@ -222,6 +231,12 @@ end
 ## -------------- median filter --------------
 
 
+## -------------- identity (copy!) --------------
+function update_tau!(::typeof(copy!), ratio)
+    return nothing
+end
+get_tau(::typeof(copy!)) = 0.
+
 
 ## -------------- weighted average filter --------------
 """
@@ -290,6 +305,11 @@ end
 return the padding size of the Gaussian filter.
 """
 get_pdsz(gf::GaussianFilter) = size(gf.kernel, 1) ÷ 2
+
+"""
+    get_tau(gf::GaussianFilter)
+get_tau(gf::GaussianFilter) = gf.τ[]
+"""
 
 """
     get_kernel(gf::GaussianFilter)

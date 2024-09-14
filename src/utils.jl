@@ -124,6 +124,9 @@ function TensorBoardLogger.deserialize_tensor_summary(::TensorBoardLogger.tensor
 end
 
 
+function remove_bitmode(scheme::Unsigned, mod::Unsigned)
+    return scheme & (~ mod)
+end
 
 """
     scheme_to_str(s::Vector)

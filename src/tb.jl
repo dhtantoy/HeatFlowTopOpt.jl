@@ -49,7 +49,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
-        if _is_scheme(SCHEME_WALK | SCHEME_CHANGE)
+        if _is_scheme(SCHEME_WALK | SCHEME_CHANGE) || isempty(motion_type)
             τ₀ = zero(τ₀)
             β₂ = 0.
         end
@@ -59,6 +59,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         elseif motion_type == "gf"
             pdsz = config["pdsz"]
             motion = GaussianFilter(Float64, 2, N + 1, τ₀; pdsz= pdsz)
+        elseif motion_type == ""
+            motion = copy!
         else
             error("motion type not defined!")
         end
@@ -244,7 +246,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             randperm!(Random.seed!(i), cache_arr_idx)
             weight = cache_arr_Φ_2
             weight[cache_arr_idx] = 1. :length(weight)
-        elseif _is_scheme(SCHEME_CORRECT)
+        else
             weight = arr_Φ
         end
 
@@ -293,7 +295,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         time_in = time()
         n_in_iter = 0
         flag_in_iter_stop = false
-        if _is_scheme(SCHEME_CORRECT | SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT)
+        if _is_scheme(SCHEME_ALL_CORRECT)
             Ei >= E && computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
             while Ei >= E
                 n_in_iter += 1
@@ -329,9 +331,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         # ---- log output
         time_in = n_in_iter == 0 ? 0. : time() - time_in
         volₖ = sum(fe_arr_χ) / length(fe_arr_χ)
-        curϵ = norm(fe_arr_χ - arr_χ_old, 2)
+        curϵ = abs((E - Ei)/E)
 
-        τ = motion.τ[]
+        τ = get_tau(motion)
         debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(fe_arr_χ, WH)
