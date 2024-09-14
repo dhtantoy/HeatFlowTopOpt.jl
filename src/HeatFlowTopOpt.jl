@@ -40,7 +40,7 @@ using Printf: Format, format as pformat, @sprintf
 export run_with_configs
 export domain2mp4
 export SCHEME_NULL, SCHEME_BOUNDARY, SCHEME_CORRECT, SCHEME_OLD, SCHEME_WALK, SCHEME_CHANGE, SCHEME_WINDOW, SCHEME_PROB_CORRECT, SCHEME_RAND_CORRECT
-
+export SCHEME_OLD_PHI
 # UInt16 at most 16 cases
 const U16_UNIT = 0x0001
 
@@ -63,6 +63,8 @@ const SCHEME_WINDOW = U16_UNIT << 5
 const SCHEME_PROB_CORRECT = U16_UNIT << 6
 # random correction.
 const SCHEME_RAND_CORRECT = U16_UNIT << 7
+# addition of Φ_k, Φ_{k+1}
+const SCHEME_OLD_PHI = U16_UNIT << 8
 
 const SCHEME_ALL_CORRECT = SCHEME_CORRECT | SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT
 
@@ -74,7 +76,8 @@ const ALL_SCHEME_PAIRS = [
     SCHEME_WALK => "walk",
     SCHEME_WINDOW => "window",
     SCHEME_PROB_CORRECT => "prob_correct",
-    SCHEME_RAND_CORRECT => "rand_correct"
+    SCHEME_RAND_CORRECT => "rand_correct",
+    SCHEME_OLD_PHI => "old_phi",
 ] 
 
 

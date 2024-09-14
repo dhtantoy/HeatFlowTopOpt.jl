@@ -26,7 +26,7 @@ end
 in-place update of `A` with `B` and `w` as the weight. `(1-w)A + wB -> A`, i.e.
 `A + w(B - A) -> A`.
 """
-function post_chi!(A, B, w::Real)
+function post_interpolate!(A, B, w::Real)
     r = 1 - w
     @turbo for i = eachindex(A)
         A[i] = B[i] * w + A[i] * r
@@ -39,7 +39,7 @@ end
 in-place update of `A` with `B` and `W` as the weight. `(1-W)⊗A + W⊗B -> A`, i.e. 
 `A + W⊗(B - A) -> A`.
 """
-function post_chi!(A, B, W::AbstractArray{T}) where T
+function post_interpolate!(A, B, W::AbstractArray{T}) where T
     @turbo for i = eachindex(A)
         A[i] = B[i] + W[i] * (A[i] - B[i])
         # A[i] = B[i] * W[i] + A[i] * (one(T) - W[i])

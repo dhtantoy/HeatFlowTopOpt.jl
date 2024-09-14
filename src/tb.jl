@@ -100,6 +100,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     arr_Φ = Matrix{Float64}(undef, N + 1, N + 1);
     cache_arr_Φ_1 = zero(arr_Φ);
     cache_arr_Φ_2 = zero(arr_Φ);
+    arr_Φ_old = zero(arr_Φ);
     # -----------------------------------------------------------------------
 
     # ----------------------------------- problem-dependent setting -----------------------
@@ -180,6 +181,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         time_out = time()
 
         copy!(arr_χ_old, fe_arr_χ);
+        copy!(arr_Φ_old, arr_Φ);
 
         # ---- solve adjoint pde
         pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trial, T_A, T_LU, T_b, T_assem)
@@ -229,7 +231,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
 
         # ---- pre-process χ
+        ## stablization with Φ_k when i >= 2, note that when i = 1, arr_Φ_old = 0
+        _is_scheme(SCHEME_OLD_PHI) && post_interpolate!(arr_Φ, arr_Φ_old, 0.5)
+
         Φ_min, Φ_max = extrema(arr_Φ)
+
         ## update on the boundary
         _is_scheme(SCHEME_BOUNDARY) && post_phi!(arr_Φ, fe_arr_Gτχ, Φ_max, Φ_min, down, up)
 
@@ -262,17 +268,17 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         _is_scheme(SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
 
         # ---- post-process χ 
-        _is_scheme(SCHEME_OLD) && post_chi!(fe_arr_χ, arr_χ_old, 0.5)
+        _is_scheme(SCHEME_OLD) && post_interpolate!(fe_arr_χ, arr_χ_old, 0.5)
 
         if _is_scheme(SCHEME_WALK)
             _vol = M / length(fe_arr_χ)
             random_window!(arr_rand_χ, arr_rand_kernel, _vol, i);
-            post_chi!(fe_arr_χ, arr_rand_χ, rand_rate)
+            post_interpolate!(fe_arr_χ, arr_rand_χ, rand_rate)
         end
         if _is_scheme(SCHEME_WINDOW)
             window = arr_rand_χ
             random_window!(window, arr_rand_kernel, max(rand_rate, 0.1), i) 
-            post_chi!(fe_arr_χ, arr_χ_old, window)
+            post_interpolate!(fe_arr_χ, arr_χ_old, window)
         end
         
         # ---- compute energy
@@ -331,7 +337,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         # ---- log output
         time_in = n_in_iter == 0 ? 0. : time() - time_in
         volₖ = sum(fe_arr_χ) / length(fe_arr_χ)
-        curϵ = abs((E - Ei)/E)
+        # curϵ = abs((E - Ei)/E)
+        curϵ = norm(fe_arr_χ - arr_χ_old, 2)
 
         τ = get_tau(motion)
         debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"

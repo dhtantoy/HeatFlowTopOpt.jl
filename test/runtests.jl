@@ -32,19 +32,19 @@ vec_configs = [
     "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 10., 
-    "save_iter" => 1,
+    "save_iter" => 5,
     "save_start" => 0,
     "vol" => 0.3,
-    "max_it" => 3,
+    "max_it" => 5,
     "InitType" => "Rand",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => [SCHEME_BOUNDARY, SCHEME_CORRECT, SCHEME_R_CORRECT],
+    "scheme" => SCHEME_PROB_CORRECT,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
     # model parameter
-    "N" => 20,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "N" => 50,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
@@ -57,7 +57,7 @@ map(eachindex(appended_config_arr)) do i
     pvd = createpvd(prefix)
 
     # debug
-    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= false)
+    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= true)
     savepvd(pvd)
 
 end
