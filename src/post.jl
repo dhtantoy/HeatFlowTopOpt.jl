@@ -236,15 +236,9 @@ function parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{:DATA})
     return data_str
 end
 
-function my_output_typst(path)
-    scalar_tags = [
-        "energy/E" "energy/Jt"
-    ]
-    key = "scheme"
-
+function my_output_typst(path; key= "scheme", tags= ["energy/E" "energy/Jt"])
     post_path = joinpath(path, "post")
-    grp_results, df_typst_hp, df_typst_data = post_tb_data(key, scalar_tags, path)
-
+    grp_results, df_typst_hp, df_typst_data = post_tb_data(key, tags, path)
     open(joinpath(post_path, "main.typ"), "w") do io 
         print(io, """
     #import "@preview/easytable:0.1.0": easytable, elem
