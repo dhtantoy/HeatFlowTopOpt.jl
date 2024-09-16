@@ -124,15 +124,15 @@ end
 Plots.plot!(::Nothing, args...; kwargs...) = nothing
 Plots.png(::Nothing, args...; kwargs...) = nothing
 
+
 """
-    post_tb_data(key::String, scalar_tags::Matrix{String}, data_path::String; kwargs...)    
-post-process the saclar data with tag `scalar_tags` and images data with tag `image_tag` in `data_path`
-and group them by `key`.  
+    post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{String}, data_path::String; image_tag::String = "domain/χ")
+post-process the trajectory data with tag `trajectory_tags` and scalar data with tag `scalar_tags` in `data_path`.
 
 # Keyword Arguments
 - image_tag::String= "domain/χ": the tag of the domain images
 """
-function post_tb_data(key, scalar_tags::Matrix{String}, data_path::String; image_tag::String = "domain/χ")
+function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{String}, data_path::String; image_tag::String = "domain/χ")
     tb_path = joinpath(data_path, "tb")
     @assert isdir(tb_path) "tb path does not exist."
     hp = get_tb_hparams(tb_path)
@@ -148,15 +148,16 @@ function post_tb_data(key, scalar_tags::Matrix{String}, data_path::String; image
     
     df_results = DataFrame()
     _all = nrow(hp)
-    _done = 0
+    num_done = 0
     for I = 1:_all
         run_i = hp[I, :run_i]
         scalars = get_run_data(joinpath(tb_path, run_i), tags=scalar_tags)
+        trajectories = get_run_data(joinpath(tb_path, run_i), tags=trajectory_tags)
         images = get_run_data(joinpath(tb_path, run_i), tags=image_tag)
 
         img_init_chi = "init_chi_$(run_i).png"
         img_trajectory = "trajectory_$(run_i).png"
-        img_chis = map(1:length(scalar_tags)) do j
+        img_chis = map(1:length(trajectory_tags)) do j
             return "chi_$(run_i)_tag_$(j).png"
         end
 
@@ -166,47 +167,61 @@ function post_tb_data(key, scalar_tags::Matrix{String}, data_path::String; image
         _path_img_trajectory = joinpath(img_path, img_trajectory)
         fig_trajectory = isfile(_path_img_trajectory) ? nothing : plot(title= "Objective Functional", xlabel= "iteration", ylabel= "value")
         
-        run_i_min_vals = zeros(length(scalar_tags))
-        for j = eachindex(scalar_tags)
+        _d_tr = Pair{String, Union{DFImage, Float64, Float32}}[]
+        for j = eachindex(trajectory_tags)
             img_chi_path = joinpath(img_path, img_chis[j])
-            tag = scalar_tags[j]
-            h = scalars[Symbol(tag)]
+            tag = trajectory_tags[j]
+            h = trajectories[Symbol(tag)]
             val, step = findmin(h.values)
-            run_i_min_vals[j] = round(val; digits= 1)
+            _min_val = round(val; digits= 1)
 
             J = min(step + 10, length(h.iterations))
             plot!(fig_trajectory, h.iterations[1:J], h.values[1:J], label= tag, linewidth= 3)
             
-            plot!(fig_trajectory, [step], [val], seriestype=:scatter, label= @sprintf("%.1f", run_i_min_vals[j]))
+            plot!(fig_trajectory, [step], [val], seriestype=:scatter, label= @sprintf("%.1f", _min_val))
             isfile(img_chi_path) || save(img_chi_path, images[Symbol(image_tag)].values[step])
+            
+            out_tag = split(tag, "/")[end]
+            push!(_d_tr, 
+                out_tag => _min_val, 
+                "chi_"*out_tag => DFImage(joinpath(typst_img_path, img_chis[j]))
+            )
         end
         png(fig_trajectory, _path_img_trajectory)
+        
+        _d_scalar = Pair{String, String}[]
+        for j = eachindex(scalar_tags)
+            tag = scalar_tags[j]
+            if haskey(scalars, Symbol(tag))
+                h = scalars[Symbol(tag)]
+                _end_val = pformat(Format("%.2e"), h.values[end])
+            else
+                _end_val = "missing"
+            end
+            out_tag = split(tag, "/")[end]
+            push!(_d_scalar, out_tag => _end_val)
+        end
         append!(df_results, DataFrame(
-            scalar_tags[1] => run_i_min_vals[1],
-            "chi_"*scalar_tags[1] => DFImage(joinpath(typst_img_path, img_chis[1])),
-            scalar_tags[2] => run_i_min_vals[2],
-            "chi_"*scalar_tags[2] => DFImage(joinpath(typst_img_path, img_chis[2])),
+            _d_tr...,
             "trajectory" => DFImage(joinpath(typst_img_path, img_trajectory)),
+            _d_scalar...,
             "run_i" => run_i,
         ))
-        _done += 1
-        @info "$run_i ($_done // $_all) completed."
+
+        num_done += 1
+        @info "$run_i ($num_done // $_all) completed."
     end
-    df_typst_hp = DFTypst{:HP}([x for x in names(hp) if (x != key && x !="run_i")])
-    df_typst_data = DFTypst{:DATA}(vcat(key, names(df_results)))
-
-    hp = rightjoin(hp, df_results; on= "run_i")
-    grp_results = groupby(hp, Not(names(df_results), key))
-
-    return grp_results, df_typst_hp, df_typst_data
+    return hp, df_results
 end
 
+@inline _get_typst_hp(key, hp) = DFTypst{:HP}([x for x in names(hp) if (x != key && x !="run_i")])
+@inline _get_typst_data(key, name4df_results) = DFTypst{:DATA}(vcat(key, name4df_results))
 
 """
     _parse_item(::Val{F}, x::Union{Float64, DFImage, Any}) where F
 parse the item `x` to string.
 """
-function _parse_item(::Val{F}, x::Float64) where F 
+function _parse_item(::Val{F}, x::AbstractFloat) where F 
     str = pformat(Format("%.1f"), x)
     if F 
         str = "#box(stroke: green, inset: 4pt)[$str]"
@@ -280,28 +295,50 @@ function parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{:DATA})
 end
 
 """
-    my_output_typst(path; kwargs...)
+    output_with_keys(path, keys; kwargs...)
 output the typst file of the post-processed data in `path`.
 
 # Keyword Arguments
-- key::String= "scheme": the key to group the data
 - tags::Vector{String}= ["energy/E" "energy/Jt"]: the tags of the data
 """
-function my_output_typst(path; key= "scheme", tags= ["energy/E" "energy/Jt"])
+function output_with_keys(path, keys; tags= [])
+    trajectory_tags = ["energy/E" "energy/Jt"]
     post_path = joinpath(path, "post")
-    grp_results, df_typst_hp, df_typst_data = post_tb_data(key, tags, path)
-    open(joinpath(post_path, "main.typ"), "w") do io 
-        print(io, """
-    #import "@preview/easytable:0.1.0": easytable, elem
-    #import elem: *
-    """)
-
-        for i = 1:length(grp_results)
-            print(io, parse_to_typ(grp_results[i], df_typst_hp, i))
-            print(io, parse_to_typ(grp_results[i], df_typst_data))
-        end
+    hp, df_results = post_tb_data(trajectory_tags, tags, path)
+    ns = names(df_results)
+    typfile = joinpath(post_path, "main.typ")
+    if length(keys) > 1
+        out_prefix = joinpath(post_path, "pdf")
+        mkpath(out_prefix)
+    else
+        out_prefix = post_path
     end
 
+    for key in keys 
+        df_typst_hp = _get_typst_hp(key, hp)
+        df_typst_data = _get_typst_data(key, ns)
+        df = rightjoin(hp, df_results; on= "run_i")
+
+        grp_results = groupby(df, Not(ns, key))
+
+        outfile = joinpath(out_prefix, key)
+        open(typfile, "w") do io 
+            print(io, """
+        #import "@preview/easytable:0.1.0": easytable, elem
+        #import elem: *
+        """)
+
+            for i = 1:length(grp_results)
+                print(io, parse_to_typ(grp_results[i], df_typst_hp, i))
+                print(io, parse_to_typ(grp_results[i], df_typst_data))
+            end
+        end
+
+        run(`typst compile $typfile $outfile.pdf`)
+        @info "compiling $outfile.pdf ..."
+    end
+
+    rm(typfile)
     return nothing
 end
 

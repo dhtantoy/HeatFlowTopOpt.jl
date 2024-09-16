@@ -312,6 +312,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- update quantities
         curϵ < ϵ && update_tau!(motion, ϵ_ratio)
+        if τ < 1e-8 
+            @warn "τ is less than 1e-8, now break.".
+            break
+        end
         E = Ei
         i += 1
         rand_rate *= 0.99
