@@ -30,7 +30,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         rand_kernel_dim::Int = config["rand_kernel_dim"]
         
         # parameters corresponding to PDE
-        β = config["β"]
+        β₁ = config["β₁"]
+        β₂ = config["β₂"]
         k1 = config["k1"]
         k2 = config["k2"]
         q1 = config["q1"]
@@ -43,7 +44,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         if _is_scheme(SCHEME_WALK | SCHEME_CHANGE) || isempty(motion_type)
             τ₀ = zero(τ₀)
-            β = 0.
+            β₁ = 0.
         end
         
         if motion_type == "conv"
@@ -124,10 +125,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion) 
     pde_solve!(Th, a, l, test, trial, A, LU, b, assem)
 
-    Jγ = β * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+    Jγ = β₁ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
     @check_tau(Jγ)
     Jt = sum( l(Th) )
-    E = Jγ + Jt
+    Jk = - β₂ * sum( l(1.) )
+    E = Jγ + Jt + Jk
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- log output -----------------------------------
@@ -143,7 +145,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
         catch; finally
             image_χ = TBImage(fe_arr_χ, WH)
-            @info "energy" Jγ= Jγ Jt= Jt E= E
+            @info "energy" Jγ= Jγ Jt= Jt Jk= Jk E= E
             @info "domain" χ= image_χ log_step_increment=0
             @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
         end
@@ -176,11 +178,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
-        fe_Φ = 2*(q1-q2)*Th - (k1-k2)*(∇(Th)⋅∇(Th))
+        fe_Φ = (q1-q2)*(2*Th - β₂) - (k1-k2)*(∇(Th)⋅∇(Th))
         _compute_node_value!(cache_arr_Φ_1, fe_Φ, trian)
         motion(arr_Φ, cache_arr_Φ_1)
         ## perimeter of interface
-        _r = β * sqrt(π / τ); @check_tau(_r);
+        _r = β₁ * sqrt(π / τ); @check_tau(_r);
         @turbo @. arr_Φ += _r * (fe_arr_Gτχ₂ - fe_arr_Gτχ)
         ## post-processing for symmetry
         copy!(cache_arr_Φ_1, arr_Φ)
@@ -250,10 +252,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         ## solve pde with χ_{k+1} 
         pde_solve!(Th, a, l, test, trial, A, LU, b, assem)
         ## energy
-        Jγ = β * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+        Jγ = β₁ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
         @check_tau(Jγ)
         Jt = sum( l(Th) )
-        Ei = Jγ + Jt
+        Jk = - β₂ * sum( l(1.) )
+        Ei = Jγ + Jt + Jk
 
         time_out = time() - time_out
         
@@ -281,10 +284,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 ## solve pde with χ_{k+1} 
                 pde_solve!(Th, a, l, test, trial, A, LU, b, assem)
                 ## energy
-                Jγ = β * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+                Jγ = β₁ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
                 @check_tau(Jγ)
                 Jt = sum( l(Th) )
-                Ei = Jγ + Jt
+                Jk = - β₂ * sum( l(1.) )
+                Ei = Jγ + Jt + Jk
             end
         end
 
@@ -301,10 +305,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         curϵ = norm(fe_arr_χ - arr_χ_old, 2)
 
         τ = get_tau(motion)
-        debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β = $β, in_iter= $n_in_iter"
+        debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β = $β₁, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(fe_arr_χ, WH)
-            @info "energy" Jγ= Jγ Jt= Jt E= E
+            @info "energy" Jγ= Jγ Jt= Jt Jk= Jk E= E
             @info "domain" χ= image_χ log_step_increment=0
             @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0
