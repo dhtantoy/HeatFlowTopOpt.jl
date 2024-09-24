@@ -17,6 +17,7 @@ using Gridap.Geometry
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.FESpaces
+using BubbleSpaces
 
 using LoopVectorization
 using TensorBoardLogger

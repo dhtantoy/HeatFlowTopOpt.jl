@@ -85,6 +85,25 @@ end
 function _test_and_trial_space(::Val{F}, args...) where {F}
     error("flag $F not defined!") |> throw
 end
+
+function _test_and_trial_space(::Val{:StokesMini}, trian, dtags, dval)
+    ref_V = LagrangianRefFE(VectorValue{2, Float64}, TRI, 1)
+    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= dtags)
+    V_trial = TrialFESpace(V_test, dval)
+    ref_B = BubbleRefFE(VectorValue{2, Float64}, TRI)
+    B_test = TestFESpace(trian, ref_B;)
+    B_trial = TrialFESpace(B_test)
+
+    ref_P = LagrangianRefFE(Float64, TRI, 1)
+    P_test = TestFESpace(trian, ref_P; conformity= :H1, constraint= :zeromean)
+    P_trial = TrialFESpace(P_test)
+
+    trial = MultiFieldFESpace([V_trial, B_trial, P_trial])
+    test = MultiFieldFESpace([V_test, B_test, P_test])
+
+    return test, trial
+end
+
 function _test_and_trial_space(::Val{:Stokes}, trian, dtags, dval)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
     V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= dtags)
