@@ -150,66 +150,69 @@ function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{Strin
     _all = nrow(hp)
     num_done = 0
     for I = 1:_all
-        run_i = hp[I, :run_i]
-        scalars = get_run_data(joinpath(tb_path, run_i), tags=scalar_tags)
-        trajectories = get_run_data(joinpath(tb_path, run_i), tags=trajectory_tags)
-        images = get_run_data(joinpath(tb_path, run_i), tags=image_tag)
+        try
+            run_i = hp[I, :run_i]
+            scalars = get_run_data(joinpath(tb_path, run_i), tags=scalar_tags)
+            trajectories = get_run_data(joinpath(tb_path, run_i), tags=trajectory_tags)
+            images = get_run_data(joinpath(tb_path, run_i), tags=image_tag)
 
-        img_init_chi = "init_chi_$(run_i).png"
-        img_trajectory = "trajectory_$(run_i).png"
-        img_chis = map(1:length(trajectory_tags)) do j
-            return "chi_$(run_i)_tag_$(j).png"
-        end
-
-        _path_img_init_chi = joinpath(img_path, img_init_chi)
-        isfile(_path_img_init_chi) || save(_path_img_init_chi, first( images[Symbol(image_tag)].values ))
-        
-        _path_img_trajectory = joinpath(img_path, img_trajectory)
-        fig_trajectory = isfile(_path_img_trajectory) ? nothing : plot(title= "Objective Functional", xlabel= "iteration", ylabel= "value")
-        
-        _d_tr = Pair{String, Union{DFImage, Float64, Float32}}[]
-        for j = eachindex(trajectory_tags)
-            img_chi_path = joinpath(img_path, img_chis[j])
-            tag = trajectory_tags[j]
-            h = trajectories[Symbol(tag)]
-            val, step = findmin(h.values)
-            _min_val = round(val; digits= 1)
-
-            J = min(step + 10, length(h.iterations))
-            plot!(fig_trajectory, h.iterations[1:J], h.values[1:J], label= tag, linewidth= 3)
-            
-            plot!(fig_trajectory, [step], [val], seriestype=:scatter, label= @sprintf("%.1f", _min_val))
-            isfile(img_chi_path) || save(img_chi_path, images[Symbol(image_tag)].values[step])
-            
-            out_tag = split(tag, "/")[end]
-            push!(_d_tr, 
-                out_tag => _min_val, 
-                "chi_"*out_tag => DFImage(joinpath(typst_img_path, img_chis[j]))
-            )
-        end
-        png(fig_trajectory, _path_img_trajectory)
-        
-        _d_scalar = Pair{String, String}[]
-        for j = eachindex(scalar_tags)
-            tag = scalar_tags[j]
-            if haskey(scalars, Symbol(tag))
-                h = scalars[Symbol(tag)]
-                _end_val = pformat(Format("%.2e"), h.values[end])
-            else
-                _end_val = "missing"
+            img_init_chi = "init_chi_$(run_i).png"
+            img_trajectory = "trajectory_$(run_i).png"
+            img_chis = map(1:length(trajectory_tags)) do j
+                return "chi_$(run_i)_tag_$(j).png"
             end
-            out_tag = split(tag, "/")[end]
-            push!(_d_scalar, out_tag => _end_val)
-        end
-        append!(df_results, DataFrame(
-            _d_tr...,
-            "trajectory" => DFImage(joinpath(typst_img_path, img_trajectory)),
-            _d_scalar...,
-            "run_i" => run_i,
-        ))
 
-        num_done += 1
-        @info "$run_i ($num_done // $_all) completed."
+            _path_img_init_chi = joinpath(img_path, img_init_chi)
+            isfile(_path_img_init_chi) || save(_path_img_init_chi, first( images[Symbol(image_tag)].values ))
+            
+            _path_img_trajectory = joinpath(img_path, img_trajectory)
+            fig_trajectory = isfile(_path_img_trajectory) ? nothing : plot(title= "Objective Functional", xlabel= "iteration", ylabel= "value")
+            
+            _d_tr = Pair{String, Union{DFImage, Float64, Float32}}[]
+            for j = eachindex(trajectory_tags)
+                img_chi_path = joinpath(img_path, img_chis[j])
+                tag = trajectory_tags[j]
+                h = trajectories[Symbol(tag)]
+                val, step = findmin(h.values)
+                _min_val = round(val; digits= 1)
+
+                J = min(step + 10, length(h.iterations))
+                plot!(fig_trajectory, h.iterations[1:J], h.values[1:J], label= tag, linewidth= 3)
+                
+                plot!(fig_trajectory, [step], [val], seriestype=:scatter, label= @sprintf("%.1f", _min_val))
+                isfile(img_chi_path) || save(img_chi_path, images[Symbol(image_tag)].values[step])
+                
+                out_tag = split(tag, "/")[end]
+                push!(_d_tr, 
+                    out_tag => _min_val, 
+                    "chi_"*out_tag => DFImage(joinpath(typst_img_path, img_chis[j]))
+                )
+            end
+            png(fig_trajectory, _path_img_trajectory)
+            
+            _d_scalar = Pair{String, String}[]
+            for j = eachindex(scalar_tags)
+                tag = scalar_tags[j]
+                if haskey(scalars, Symbol(tag))
+                    h = scalars[Symbol(tag)]
+                    _end_val = pformat(Format("%.2e"), h.values[end])
+                else
+                    _end_val = "missing"
+                end
+                out_tag = split(tag, "/")[end]
+                push!(_d_scalar, out_tag => _end_val)
+            end
+            append!(df_results, DataFrame(
+                _d_tr...,
+                "trajectory" => DFImage(joinpath(typst_img_path, img_trajectory)),
+                _d_scalar...,
+                "run_i" => run_i,
+            ))
+
+            num_done += 1
+            @info "$run_i ($num_done // $_all) completed."
+        catch; 
+        end
     end
     return hp, df_results
 end
