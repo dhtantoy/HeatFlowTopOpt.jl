@@ -132,7 +132,7 @@ post-process the trajectory data with tag `trajectory_tags` and scalar data with
 # Keyword Arguments
 - image_tag::String= "domain/χ": the tag of the domain images
 """
-function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{String}, data_path::String; image_tag::String = "domain/χ")
+function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{String}, data_path::String; image_tag::String = "domain/χ", typst_img_path = "images", regen= true)
     tb_path = joinpath(data_path, "tb")
     @assert isdir(tb_path) "tb path does not exist."
     hp = get_tb_hparams(tb_path)
@@ -142,7 +142,6 @@ function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{Strin
     @info "all post-processed data will be stored in $post_path"
 
     img_path = joinpath(post_path, "images")
-    typst_img_path = "images"
     mkpath(img_path)
     @info "processing images... all images will be stored in $img_path"
     
@@ -163,10 +162,10 @@ function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{Strin
             end
 
             _path_img_init_chi = joinpath(img_path, img_init_chi)
-            isfile(_path_img_init_chi) || save(_path_img_init_chi, first( images[Symbol(image_tag)].values ))
+            regen && save(_path_img_init_chi, first( images[Symbol(image_tag)].values ))
             
             _path_img_trajectory = joinpath(img_path, img_trajectory)
-            fig_trajectory = isfile(_path_img_trajectory) ? nothing : plot(title= "Objective Functional", xlabel= "iteration", ylabel= "value")
+            fig_trajectory = regen ? plot(title= "Objective Functional", xlabel= "iteration", ylabel= "value") : nothing
             
             _d_tr = Pair{String, Union{DFImage, Float64, Float32}}[]
             for j = eachindex(trajectory_tags)
@@ -174,13 +173,13 @@ function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{Strin
                 tag = trajectory_tags[j]
                 h = trajectories[Symbol(tag)]
                 val, step = findmin(h.values)
-                _min_val = round(val; digits= 1)
+                _min_val = abs(val) < 1e-1 ? val : round(val; digits= 2)
 
                 J = min(step + 10, length(h.iterations))
                 plot!(fig_trajectory, h.iterations[1:J], h.values[1:J], label= tag, linewidth= 3)
                 
                 plot!(fig_trajectory, [step], [val], seriestype=:scatter, label= @sprintf("%.1f", _min_val))
-                isfile(img_chi_path) || save(img_chi_path, images[Symbol(image_tag)].values[step])
+                regen && save(img_chi_path, images[Symbol(image_tag)].values[step])
                 
                 out_tag = split(tag, "/")[end]
                 push!(_d_tr, 
@@ -195,7 +194,7 @@ function post_tb_data(trajectory_tags::Matrix{String}, scalar_tags::Vector{Strin
                 tag = scalar_tags[j]
                 if haskey(scalars, Symbol(tag))
                     h = scalars[Symbol(tag)]
-                    _end_val = pformat(Format("%.2e"), h.values[end])
+                    _end_val = @sprintf("%.2e", h.values[end])
                 else
                     _end_val = "missing"
                 end
@@ -225,7 +224,7 @@ end
 parse the item `x` to string.
 """
 function _parse_item(::Val{F}, x::AbstractFloat) where F 
-    str = pformat(Format("%.1f"), x)
+    str = abs(x) < 0.1 ? @sprintf("%.2e", x) : @sprintf("%.2f", x)
     if F 
         str = "#box(stroke: green, inset: 4pt)[$str]"
     end
@@ -268,7 +267,6 @@ function parse_to_typ(df::AbstractDataFrame, dftyp::DFTypst{:DATA})
     dfnames = dftyp.names
     n = length(dfnames)
 
-
     title = "th"*join(["[$item]" for item in dfnames], "")
     argmin_id = map(argmin, eachcol(df[!, dfnames]))
   
@@ -304,11 +302,29 @@ output the typst file of the post-processed data in `path`.
 # Keyword Arguments
 - tags::Vector{String}= ["energy/E" "energy/Jt"]: the tags of the data
 """
-function output_with_keys(path, keys; tags= [])
-    trajectory_tags = ["energy/E" "energy/Jt"]
-    post_path = joinpath(path, "post")
-    hp, df_results = post_tb_data(trajectory_tags, tags, path)
+function output_with_keys(path_list, keys; tags= [], regen= true)
+    trajectory_tags = ["energy/E" "energy/Ju"]
+    main_path = first(path_list)
+    hp, df_results = post_tb_data(trajectory_tags, tags, main_path; regen= regen)
+    
+    for i = 2:length(path_list)
+        path = path_list[i]
+        typst_img_path = "images_$i"
+        _hp, _df_results = post_tb_data(trajectory_tags, tags, path; typst_img_path= typst_img_path, regen= regen)
+        
+        @assert names(_hp) == names(hp) "hyperparameters does not have the same items."
+        _hp = combine(_hp, Not("run_i"), "run_i" => (x -> "$(i)_" .* x) => "run_i")
+        _df_results = combine(_df_results, Not("run_i"), "run_i" => (x -> "$(i)_" .* x) => "run_i")
+        
+        src = joinpath(path, "post", "images")
+        dest = joinpath(main_path, "post", typst_img_path)
+        cp(src, dest; follow_symlinks= true, force= true)
+        append!(df_results, _df_results)
+        append!(hp, _hp)
+    end
+    post_path = joinpath(main_path, "post")
     ns = names(df_results)
+
     typfile = joinpath(post_path, "main.typ")
     if length(keys) > 1
         out_prefix = joinpath(post_path, "pdf")
@@ -316,7 +332,16 @@ function output_with_keys(path, keys; tags= [])
     else
         out_prefix = post_path
     end
-
+    if length(path_list) > 1 
+        ts = map(path_list) do p 
+            DateTime(replace(splitpath(p)[end], '_' => ':'))
+        end
+        tmin, tmax = extrema(ts)
+        file = dformat(tmin, "mm-dd") * "TO" * dformat(tmax, "mm-dd")
+    else
+        file = ""
+    end    
+    
     for key in keys 
         df_typst_hp = _get_typst_hp(key, hp)
         df_typst_data = _get_typst_data(key, ns)
@@ -324,7 +349,7 @@ function output_with_keys(path, keys; tags= [])
 
         grp_results = groupby(df, Not(ns, key))
 
-        outfile = joinpath(out_prefix, key)
+        outfile = joinpath(out_prefix, file * key)
         open(typfile, "w") do io 
             print(io, """
         #import "@preview/easytable:0.1.0": easytable, elem
@@ -344,4 +369,5 @@ function output_with_keys(path, keys; tags= [])
     rm(typfile)
     return nothing
 end
+
 
