@@ -18,6 +18,7 @@ using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.FESpaces
 using BubbleSpaces
+import GridapGmsh: gmsh
 
 using LoopVectorization
 using TensorBoardLogger
@@ -44,6 +45,7 @@ export SCHEME_NULL
 export SCHEME_BOUNDARY, SCHEME_WALK, SCHEME_CHANGE, SCHEME_WINDOW
 export SCHEME_OLD_PHI, SCHEME_OLD
 export SCHEME_CORRECT, SCHEME_PROB_CORRECT, SCHEME_RAND_CORRECT, SCHEME_CORRECT_REV
+export getmodel
 # UInt16 at most 16 cases
 const U16_UNIT = 0x0001
 

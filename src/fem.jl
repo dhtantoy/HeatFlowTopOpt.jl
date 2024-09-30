@@ -217,7 +217,7 @@ function _compute_node_value!(out, op, trian)
 
     model = get_background_model(trian)
     top = get_grid_topology(model)
-    c_p = get_cell_points(Triangulation(model))
+    c_p = get_cell_points(trian)
     c_val = op(c_p)
     
     c2p = get_faces(top, Dc, 0)

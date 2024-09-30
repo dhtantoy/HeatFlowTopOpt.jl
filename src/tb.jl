@@ -44,8 +44,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         ud = VectorValue(config["ud⋅n"], 0.)
         g = VectorValue(config["g⋅n"], 0.)
         Td = config["Td"]
-        dim = config["dim"]
-        L = config["L"]
+        ModelFile = config["ModelFile"]
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
@@ -53,28 +52,22 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             τ₀ = zero(τ₀)
             β₂ = 0.
         end
-        
-        if motion_type == "conv"
-            motion = Conv(Float64, 2, N + 1, τ₀; time= debug ? 1 : 120);
-        elseif motion_type == "gf"
-            pdsz = config["pdsz"]
-            motion = GaussianFilter(Float64, 2, N + 1, τ₀; pdsz= pdsz)
-        elseif motion_type == ""
-            motion = copy!
-        else
-            error("motion type not defined!")
-        end
-
-        τ = τ₀
-        h = 1 / N; 
-        δt *= h^2; 
-        δu *= h^2;
-        μ = 1/Re; 
-        rand_kernel_dim = (N+1) ÷ rand_kernel_dim
     end
+    if motion_type == "conv"
+        motion = Conv(Float64, 2, Nc + 1, τ₀; time= debug ? 1 : 120);
+    elseif motion_type == "gf"
+        pdsz = config["pdsz"]
+        motion = GaussianFilter(Float64, 2, Nc + 1, τ₀; pdsz= pdsz)
+    elseif motion_type == ""
+        motion = copy!
+    else
+        error("motion type not defined!")
+    end 
 
     # ----------------------------------- model setting ----------------------------------- 
-    model = CartesianDiscreteModel(repeat([0, L], dim), repeat([N], dim)) |> simplexify;
+    Nc = Nc ÷ 3 * 3; h = 1 / Nc; μ = 1/Re; rand_kernel_dim = (Nc+1) ÷ rand_kernel_dim;
+    model, perm = getmodel(ModelFile, Nc)
+    dim = num_dims(model); δt *= h^dim; τ = τ₀;
     aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
     # -------------------------------------------------------------------------------------
 
@@ -110,9 +103,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # ----------------------------------- problem-dependent setting -----------------------
     ## heat-flow
     trian = Triangulation(model);
-    bdtrain = BoundaryTriangulation(model; tags= 7);
+    motion_trian = Triangulation(model, tags= "motion_domain");
     dx = Measure(trian, 4);
-    dσ = Measure(bdtrain, 4);
+    dx̂ = Measure(motion_trian, 4);
+    
     α = α⁻ * fe_Gτχ₂; κ = kf * fe_Gτχ + ks * fe_Gτχ₂;
 
     @inline _a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
@@ -134,7 +128,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     @inline a_Vˢ((uc, ub, p), (vc, vb, q)) = _a_Vˢ((uc + ub, p), (vc + vb, q))
     @inline l_Vˢ((vc, vb, q)) = _l_Vˢ((vc + vb, q))
 
-    cell_fields = ["Th" => Th, "uh" => uh, "χ" => fe_χ]
+    cell_fields = ["Th" => Th, "uh" => uh, "Gτχ" => fe_Gτχ]
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- initial quantities -----------------------------------
