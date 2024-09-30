@@ -60,11 +60,12 @@ function init_chi!(cache_arr_χ::Array{T}, InitType; vol= 0.4, seed= 0, file="",
 end
 
 """
-    initSingleSpace(::Val{Flag}, trian, a, dtags, dval)
+    initSingleSpace(::Val{Flag}, trian, a, diri_args...)
 return test_space, trial_space, assembler, A, b, fe_func, ad_fe_func.
+`diri_args...` is passed to `_test_and_trial_space` dirichlet.
 """
-function init_single_space(::Val{F}, trian, a, dtags, dval) where {F}
-    test, trial = _test_and_trial_space(Val(F), trian, dtags, dval)
+function init_single_space(::Val{F}, trian, a, diri_args...) where {F}
+    test, trial = _test_and_trial_space(Val(F), trian, diri_args...)
     assem = SparseMatrixAssembler(trial, test)
     cell_dof_ids = get_cell_dof_ids(trial);
     du = get_trial_fe_basis(trial)
@@ -104,11 +105,42 @@ function _test_and_trial_space(::Val{:StokesMini}, trian, dtags, dval)
 
     return test, trial
 end
+function _test_and_trial_space(::Val{:StokesMini}, trian, Vtags, Vvals, Ptags, Pvals)
+    ref_V = LagrangianRefFE(VectorValue{2, Float64}, TRI, 1)
+    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= Vtags)
+    V_trial = TrialFESpace(V_test, Vvals)
+    ref_B = BubbleRefFE(VectorValue{2, Float64}, TRI)
+    B_test = TestFESpace(trian, ref_B)
+    B_trial = TrialFESpace(B_test)
 
-function _test_and_trial_space(::Val{:Stokes}, trian, dtags, dval)
+    ref_P = LagrangianRefFE(Float64, TRI, 1)
+    P_test = TestFESpace(trian, ref_P; conformity= :H1, dirichlet_tags= Ptags)
+    P_trial = TrialFESpace(P_test, Pvals)
+
+    trial = MultiFieldFESpace([V_trial, B_trial, P_trial])
+    test = MultiFieldFESpace([V_test, B_test, P_test])
+
+    return test, trial
+end
+
+function _test_and_trial_space(::Val{:Stokes}, trian, Vtags, Vvals, Ptags, Pvals)
     ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
-    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= dtags)
-    V_trial = TrialFESpace(V_test, dval)
+    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= Vtags)
+    V_trial = TrialFESpace(V_test, Vvals)
+
+    ref_P = LagrangianRefFE(Float64, TRI, 1)
+    P_test = TestFESpace(trian, ref_P; conformity= :H1, dirichlet_tags= Ptags)
+    P_trial = TrialFESpace(P_test, Pvals)
+
+    trial = MultiFieldFESpace([V_trial,P_trial])
+    test = MultiFieldFESpace([V_test, P_test])
+
+    return test, trial
+end
+function _test_and_trial_space(::Val{:Stokes}, trian, Vtags, Vvals)
+    ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
+    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= Vtags)
+    V_trial = TrialFESpace(V_test, Vvals)
 
     ref_P = ReferenceFE(lagrangian, Float64, 1)
     P_test = TestFESpace(trian, ref_P; conformity= :H1, constraint= :zeromean)
