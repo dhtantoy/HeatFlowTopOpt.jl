@@ -44,7 +44,7 @@ vec_configs = [
     "rand_kernel_dim" => 4,
 
     # model parameter
-    "N" => 50,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "Nc" => 50,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];
@@ -52,7 +52,7 @@ vec_configs = [
 base_config, appended_config_arr = HeatFlowTopOpt.parse_vec_configs(vec_configs)
 map(eachindex(appended_config_arr)) do i
     config = merge(base_config, Dict(appended_config_arr[i]...))
-    N = config["N"]
+    Nc = config["Nc"]
     prefix = "vtk_test/simp_"
     pvd = createpvd(prefix)
 

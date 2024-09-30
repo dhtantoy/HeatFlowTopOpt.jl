@@ -75,7 +75,7 @@ vec_configs = [
     "rand_kernel_dim" => 4,
 
     # model parameter
-    "N" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "Nc" => 240,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "dim" => 2,
     "L" => 1.
 ];

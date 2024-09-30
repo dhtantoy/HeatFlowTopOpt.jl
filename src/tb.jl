@@ -40,11 +40,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         Ts = config["Ts"]
         Re = config["Re"]
         δt = config["δt"]
-        δu = config["δu"]
         ud = VectorValue(config["ud⋅n"], 0.)
         g = VectorValue(config["g⋅n"], 0.)
         Td = config["Td"]
-        ModelFile = config["ModelFile"]
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
@@ -103,13 +101,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # ----------------------------------- problem-dependent setting -----------------------
     ## heat-flow
     trian = Triangulation(model);
-    motion_trian = Triangulation(model, tags= "motion_domain");
+    bd_trian = BoundaryTriangulation(trian, tags= [7]);
     dx = Measure(trian, 4);
-    dx̂ = Measure(motion_trian, 4);
+    dσ = Measure(bd_trian, 4);
     
     α = α⁻ * fe_Gτχ₂; κ = kf * fe_Gτχ + ks * fe_Gτχ₂;
 
-    @inline _a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
+    @inline _a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx
     @inline _l_V((v, q)) = ∫( g ⋅ v)dσ
     @inline a_V((uc, ub, p), (vc, vb, q)) = _a_V((uc + ub, p), (vc + vb, q))
     @inline l_V((vc, vb, q)) = _l_V((vc + vb, q))
@@ -123,8 +121,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
     @inline a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
     @inline l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
-    @inline _a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
-    @inline _l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
+    @inline _a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx 
+    @inline _l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx
     @inline a_Vˢ((uc, ub, p), (vc, vb, q)) = _a_Vˢ((uc + ub, p), (vc + vb, q))
     @inline l_Vˢ((vc, vb, q)) = _l_Vˢ((vc + vb, q))
 
@@ -142,7 +140,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
     @check_tau(Jγ)
     Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-    E = Ju + Jγ + Jt
+    J = Ju + Jγ + Jt
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- log output -----------------------------------

@@ -64,12 +64,11 @@ end
 
 
 function symmetry!(v::PermArray, a; kwargs...)
-    copy!(v.AP, a)
-    reverse!(a; kwargs...)
-    @. v.AP = (v.AP + a) / 2
+    symmetry!(v.AP, a; kwargs...)
     v.A[v.P] = v.AP
     return nothing
 end
+
 
 
 # Base.setindex!(v::PermArray, args...) = setindex!(v.AP, args...)
