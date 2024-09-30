@@ -218,19 +218,20 @@ function _compute_node_value!(out, op, trian)
     model = get_background_model(trian)
     top = get_grid_topology(model)
     c_p = get_cell_points(trian)
-    c_val = op(c_p)
+    c_vals = op(c_p)
+    cache_val = array_cache(c_vals)
     
     c2p = get_faces(top, Dc, 0)
     counts = zeros(eltype(c2p.ptrs), size(out)...)
 
     @inbounds for c_i = eachindex(c2p)
-        cache = c_val[c_i]
+        c_val = getindex!(cache_val, c_vals, c_i)
         p_ini = c2p.ptrs[c_i]
         l = c2p.ptrs[c_i + 1] - p_ini   
         p_ini -= one(p_ini)
         for j = Base.oneto(l)
             p_i = c2p.data[p_ini + j]
-            out[p_i] += cache[j]
+            out[p_i] += c_val[j]
             counts[p_i] += one(p_ini)
         end
     end
