@@ -298,3 +298,13 @@ add dirichlet tag for built-in cartesian mesh.
     end 
 end
 
+"""
+    symmetry!(v, a; kwargs...)
+update `v` with (v + a) / 2. `kwargs` is passed to `reverse!`.
+""" 
+function symmetry!(v, a; kwargs...)
+    copy!(v, a)
+    reverse!(a; kwargs...)
+    @. v = (v + a) / 2
+    return nothing
+end
