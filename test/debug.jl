@@ -1,33 +1,37 @@
 using HeatFlowTopOpt
 using Logging 
+using Plots
 using Gridap 
 using Debugger
+using HeatFlowTopOpt: 
+    Conv, PermArray, init_chi!, post_interpolate!, 
+    post_phi!, rand_post_phi!, iterateχ!, nonsym_correct!,
+    init_single_space, smooth_funcs!, pde_solve!
 
-const lg = ConsoleLogger()
 
-vec_configs = [
+
+config = Dict(
     # pde parameter
     "β₁" => 0.,
     "β₂" => 0.,
     "β₃" => 1,
-    "δt" => 0.,
-    "α⁻" => 1000,
+    "δt" => 8e-3,
+    "α⁻" => 417.5,
     "kf" => 0.,
     "ks" => 10,
-    "Re" => 100,
+    "Re" => 300,
     "Pr" => 6.7,
     "Ts" => 1.,
-    "Vdₓ" => 1.,
+    "Vd" => VectorValue(0., 0.),
     "Td" => 0.0,
-    "Pd" => 0.,
+    "Pd" => 100.,
     "Ts" => 1.,
 
     # motion paramter
     "up" => 0.95,
     "down" => 0.05,
-    "τ₀" => 3e-4,
+    "τ₀" => 1e-3,
     "motion_type" => "conv",
-    "pdsz" => 3,
 
     # top opt parameter
     "correct_rate" => 0.5,
@@ -35,27 +39,23 @@ vec_configs = [
     "ϵ" => 10., 
     "save_iter" => 1,
     "save_start" => 0,
-    "vol" => 0.6,
-    "max_it" => 10,
+    "vol" => 0.3,
+    "max_it" => 20,
     "InitType" => "Line",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => SCHEME_CORRECT,
+    "scheme" => SCHEME_PROB_CORRECT,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
     # model parameter
-    "Nc" => 300,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
+    "Nc" => 90,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
     "ModelFile" => "lcr_model"
-];
+);
 
-base_config, appended_config_arr = HeatFlowTopOpt.parse_vec_configs(vec_configs)
-map(eachindex(appended_config_arr)) do i
-    config = merge(base_config, Dict(appended_config_arr[i]...))
-    prefix = "vtk_test/gf_"
-    pvd = createpvd(prefix)
-
-    HeatFlowTopOpt.singlerun(config, prefix, pvd, lg, 1; debug= true)
-    savepvd(pvd)
-end
+vtk_file_prefix = "vtk_test/simp_"
+vtk_file_pvd = createpvd(vtk_file_prefix)
+tb_lg = ConsoleLogger()
+run_i = 1
+debug= false
 
