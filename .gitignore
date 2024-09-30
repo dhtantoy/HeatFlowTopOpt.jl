@@ -1,9 +1,5 @@
 *.svg
-data/*
-data/*/jld2
-data/*/tb
-data/*/vtk
-data/*/tensorboard.sh
+data
 log*
 model/*
 .vscode
