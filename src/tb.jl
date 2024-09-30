@@ -9,7 +9,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     begin 
         # independent parameters
         max_it = config["max_it"]
-        N::Int = config["N"]
+        Nc::Int = config["Nc"]
         ϵ = config["ϵ"]
         ϵ_ratio = config["ϵ_ratio"] 
         save_iter::Int = config["save_iter"]
@@ -65,8 +65,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     end 
 
     # ----------------------------------- model setting ----------------------------------- 
-    Nc = Nc ÷ 3 * 3; h = 1 / Nc; μ = 1/Re; rand_kernel_dim = (Nc+1) ÷ rand_kernel_dim;
-    model, perm = getmodel(ModelFile, Nc)
+    h = 1 / Nc; μ = 1/Re; rand_kernel_dim = (Nc+1) ÷ rand_kernel_dim;
+    model, perm = getmodel(Nc)
     dim = num_dims(model); δt *= h^dim; τ = τ₀;
     aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
     # -------------------------------------------------------------------------------------

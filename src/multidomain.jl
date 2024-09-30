@@ -170,6 +170,12 @@ function getmodel(file, Nc)
 
     return m, collect(perm)
 end
+function getmodel(Nc)
+    qm = CartesianDiscreteModel((0, 1, 0, 1), (Nc, Nc))
+    sm = simplexify(qm)
+
+    return sm, nothing
+end
 
 """
 need to be debugged.
