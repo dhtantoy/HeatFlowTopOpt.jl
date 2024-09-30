@@ -1,13 +1,15 @@
+"""
+    init_chi!(cache_arr_χ, InitType; kwargs...)
+in-place initialize `cache_arr_χ` according to `InitType`.
 
-function init_chi!(fe_χ, InitType, aux_space; vol= 0.4, seed= 0, file="", key="")
-    @assert fe_χ.fe_space == aux_space "the fespace of `fe_χ` must be `aux_space`!"
-    
-    dim = num_point_dims( get_triangulation(aux_space) )
-    np = num_free_dofs(aux_space)
-    N_node::Int = np ^ (1//dim)
-    cache_arr_χ = reshape(fe_χ.free_values, repeat([N_node], dim)...)
-    T = eltype(cache_arr_χ)
-
+# Arguments
+- vol::Float64: volume of the initial region. default 0.4.
+- seed::Int: seed for random initialization. default 0.
+- file::String: file path for initialization.
+- key::String: key for initialization.
+"""
+function init_chi!(cache_arr_χ::Array{T}, InitType; vol= 0.4, seed= 0, file="", key="") where T
+    N_node = size(cache_arr_χ, 1)
     if InitType == "All"
         fill!(cache_arr_χ, one(T))
     elseif InitType == "File"
@@ -54,8 +56,7 @@ function init_chi!(fe_χ, InitType, aux_space; vol= 0.4, seed= 0, file="", key="
             error("InitType not defined!") |> throw
         end
     end
-
-    return cache_arr_χ
+    return nothing
 end
 
 """
