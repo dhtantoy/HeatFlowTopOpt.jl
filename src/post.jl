@@ -302,8 +302,8 @@ output the typst file of the post-processed data in `path`.
 # Keyword Arguments
 - tags::Vector{String}= ["energy/E" "energy/Jt"]: the tags of the data
 """
-function output_with_keys(path_list, keys; tags= [], regen= true)
-    trajectory_tags = ["energy/E" "energy/Ju"]
+function output_with_keys(path_list, keys; tags= String[], regen= true)
+    trajectory_tags = ["energy/J" "energy/Jt"]
     main_path = first(path_list)
     hp, df_results = post_tb_data(trajectory_tags, tags, main_path; regen= regen)
     
