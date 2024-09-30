@@ -22,7 +22,7 @@ function random_window!(A, kernel, ratio, seed)
 end
 
 """
-    post_chi!(A, B, w)
+    post_interpolate!(A, B, w)
 in-place update of `A` with `B` and `w` as the weight. `(1-w)A + wB -> A`, i.e.
 `A + w(B - A) -> A`.
 """
@@ -35,7 +35,7 @@ function post_interpolate!(A, B, w::Real)
 end
     
 """
-    post_chi!(A, B, W)
+    post_interpolate!(A, B, W)
 in-place update of `A` with `B` and `W` as the weight. `(1-W)⊗A + W⊗B -> A`, i.e. 
 `A + W⊗(B - A) -> A`.
 """

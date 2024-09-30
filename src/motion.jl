@@ -15,7 +15,7 @@ Implementation of a smoother. the following interface should be implemented:
 """
 abstract type Motion end
 
-(m::Motion)(out, A) = error("method $(typeof(m)) for arguments $(arg...) is not defined.")
+(m::Motion)(out, arg) = error("method $(typeof(m)) for arguments $(typeof(arg)) is not defined.")
 get_pdsz(m::Motion) = error("method get_pdsz for $(typeof(m)) is not defined.")
 get_tau(m::Motion) = error("method get_tau for $(typeof(m)) is not defined.")
 get_kernel(m::Motion) = error("method get_kernel for $(typeof(m)) is not defined.")

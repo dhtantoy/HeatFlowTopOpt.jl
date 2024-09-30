@@ -5,7 +5,7 @@ data/*/tb
 data/*/vtk
 data/*/tensorboard.sh
 log*
-models/*
+model/*
 .vscode
 test/test*
 vtk_test
