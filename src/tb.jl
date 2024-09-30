@@ -79,28 +79,32 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- cache for indicators ---------------------------
-    fe_χ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
-    fe_χ₂ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
-    fe_Gτχ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
-    fe_Gτχ₂ = FEFunction(aux_space, zeros(Float64, num_free_dofs(aux_space)));
+    # `fe_*` denotes `FEFunction`-from
+    fe_χ = FEFunction(aux_space, ones(num_free_dofs(aux_space)));
+    fe_χ₂ = FEFunction(aux_space, zeros(num_free_dofs(aux_space)));
+    fe_Gτχ = FEFunction(aux_space, ones(num_free_dofs(aux_space)));
+    fe_Gτχ₂ = FEFunction(aux_space, zeros(num_free_dofs(aux_space)));
     
-    # changes of `cache_fe_arr_*` alter the values of `fe_*`.
-    fe_arr_χ = init_chi!(fe_χ, InitType, aux_space; vol= vol, file= InitFile, key= InitKey);
-    fe_arr_χ₂ = reshape(fe_χ₂.free_values, size(fe_arr_χ));
-    fe_arr_Gτχ = reshape(fe_Gτχ.free_values, size(fe_arr_χ));
-    fe_arr_Gτχ₂ = reshape(fe_Gτχ₂.free_values, size(fe_arr_χ));
+    # changes of `arr_fe_*` will be reflected in `fe_*`. 
+    arr_fe_χ = PermArray(fe_χ.free_values, perm, dim);
+    arr_fe_χ₂ = PermArray(fe_χ₂.free_values, perm, dim);
+    arr_fe_Gτχ = PermArray(fe_Gτχ.free_values, perm, dim);
+    arr_fe_Gτχ₂ = PermArray(fe_Gτχ₂.free_values, perm, dim);
+    init_chi!(arr_fe_χ, InitType; vol= vol, file= InitFile, key= InitKey);
+    n = length(arr_fe_χ)
+    debug && display(heatmap(arr_fe_χ))
 
-    arr_rand_χ = zero(fe_arr_χ);
-    arr_rand_kernel = zeros(eltype(fe_arr_χ), (rand_kernel_dim, rand_kernel_dim));
-    arr_χ_old = zero(fe_arr_χ);
-    arr_χ₀ = copy(fe_arr_χ);
+    arr_rand_χ = zero(arr_fe_χ);
+    arr_rand_kernel = zeros(rand_kernel_dim, rand_kernel_dim);
+    arr_old_χ = zero(arr_fe_χ);
+    arr_init_χ = copy(arr_fe_χ);
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- array-form Φ -------------------------
-    arr_Φ = Matrix{Float64}(undef, N + 1, N + 1);
-    cache_arr_Φ_1 = zero(arr_Φ);
-    cache_arr_Φ_2 = zero(arr_Φ);
-    arr_Φ_old = zero(arr_Φ);
+    arr_fe_Φ = PermArray(zeros(num_free_dofs(aux_space)), perm, dim);
+    arr_cache_Φ_1 = zero(arr_fe_Φ);
+    arr_cache_Φ_2 = zero(arr_fe_Φ);
+    arr_old_Φ = zero(arr_fe_Φ);
     # -----------------------------------------------------------------------
 
     # ----------------------------------- problem-dependent setting -----------------------
@@ -134,11 +138,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- initial quantities -----------------------------------
-    debug && @info "run_$(run_i): computing initial energy ..."
-
-    volₖ = sum(fe_arr_χ) / length(fe_arr_χ);
-    M = round(Int, length(fe_arr_χ) * vol);
-    update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion) 
+    volₖ = sum(arr_fe_χ) / n;
+    M = round(Int, n * vol);
+    smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion) 
     pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
     pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
 
@@ -161,23 +163,22 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         try 
             push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
         catch; finally
-            image_χ = TBImage(fe_arr_χ, WH)
-            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt E= E
+            image_χ = TBImage(arr_fe_χ, WH)
             @info "domain" χ= image_χ log_step_increment=0
             @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
+            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt J= J
         end
     end
     # -------------------------------------------------------------------------------------
     
     # ----------------------------------- prepare for correction -----------------------
-    n = (N+1)^2;
-    cache_sz_val = SzVector(Float64, n, 0);
-    cache_sz_idx = SzVector(Int, n, 0);
+    sz_val = SzVector(Float64, n, 0);
+    sz_idx = SzVector(Int, n, 0);
     idx_A = SzVector(Int, n, 0);
     idx_B = SzVector(Int, n, 0);
     sorted_idx_inc = SzVector(Int, n, 0);
     sorted_idx_dec = SzVector(Int, n, 0);
-    cache_arr_idx = cache_sz_idx.data
+    vec_idx = sz_idx.data
     # -------------------------------------------------------------------------------------
     
     # ----------------------------------- iterations -----------------------------------
@@ -186,8 +187,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         debug && @info "run_$(run_i) iteration $(i): "
         time_out = time()
 
-        copy!(arr_χ_old, fe_arr_χ);
-        copy!(arr_Φ_old, arr_Φ);
+        copy!(arr_old_χ, arr_fe_χ);
+        copy!(arr_old_Φ, arr_fe_Φ);
 
         # ---- solve adjoint pde
         pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trial, T_A, T_LU, T_b, T_assem)
@@ -196,15 +197,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
         fe_Φ = -α⁻ * (β₁/2*uh⋅uh + 2*uh⋅uhˢ) + (kf - ks)*(∇(Th)⋅∇(Thˢ)) + γ*(ks - kf)*((Ts - Th)*(Thˢ + β₃))
-        _compute_node_value!(cache_arr_Φ_1, fe_Φ, trian)
-        motion(arr_Φ, cache_arr_Φ_1)
+        _compute_node_value!(arr_fe_Φ, fe_Φ, trian)
+        motion(arr_cache_Φ_1, arr_fe_Φ)
         ## perimeter of interface
         _r = β₂ * sqrt(π / τ); @check_tau(_r);
-        @turbo @. arr_Φ += _r * (fe_arr_Gτχ₂ - fe_arr_Gτχ)
+        @. arr_cache_Φ_1 += _r * (arr_fe_Gτχ₂ - arr_fe_Gτχ)
         ## post-processing for symmetry
-        copy!(cache_arr_Φ_1, arr_Φ)
-        reverse!(cache_arr_Φ_1, dims= 2)
-        @turbo @. arr_Φ = (arr_Φ + cache_arr_Φ_1) / 2
+        symmetry!(arr_fe_Φ, arr_cache_Φ_1; dims= 2)
 
         # ---- saving data
         if i >= save_start && mod(i, save_iter) == 0
@@ -238,59 +237,60 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- pre-process χ
         ## stablization with Φ_k when i >= 2, note that when i = 1, arr_Φ_old = 0
-        _is_scheme(SCHEME_OLD_PHI) && post_interpolate!(arr_Φ, arr_Φ_old, 0.5)
+        _is_scheme(SCHEME_OLD_PHI) && post_interpolate!(arr_fe_Φ, arr_old_Φ, 0.5)
 
-        Φ_min, Φ_max = extrema(arr_Φ)
+        Φ_min, Φ_max = extrema(arr_fe_Φ)
 
         ## update on the boundary
-        _is_scheme(SCHEME_BOUNDARY) && post_phi!(arr_Φ, fe_arr_Gτχ, Φ_max, Φ_min, down, up)
+        _is_scheme(SCHEME_BOUNDARY) && post_phi!(arr_fe_Φ, arr_fe_Gτχ, Φ_max, Φ_min, down, up)
 
         ## random change
-        _is_scheme(SCHEME_CHANGE) && rand_post_phi!(arr_Φ, cache_arr_idx, Φ_max, round(Int, rand_rate * M), i)
+        _is_scheme(SCHEME_CHANGE) && rand_post_phi!(arr_fe_Φ, vec_idx, Φ_max, round(Int, rand_rate * M), i)
         
         ## random correction
         if _is_scheme(SCHEME_PROB_CORRECT)
-            P = cache_arr_Φ_1
-            weight = cache_arr_Φ_2
-            phi_to_prob!(P, arr_Φ, Φ_max)
-            prob_to_weight!(weight, P, cache_arr_idx)
+            P = arr_cache_Φ_1
+            weight = arr_cache_Φ_2
+            phi_to_prob!(P, arr_fe_Φ, Φ_max)
+            prob_to_weight!(weight, P, vec_idx)
         elseif _is_scheme(SCHEME_RAND_CORRECT)
-            randperm!(Random.seed!(i), cache_arr_idx)
-            weight = cache_arr_Φ_2
-            weight[cache_arr_idx] = 1. :length(weight)
+            randperm!(Random.seed!(i), vec_idx)
+            weight = arr_cache_Φ_2
+            weight[vec_idx] = 1. :length(weight)
         elseif _is_scheme(SCHEME_CORRECT_REV)
-            weight = -arr_Φ
+            weight = -arr_fe_Φ
         else
-            weight = arr_Φ
+            weight = arr_fe_Φ
         end
 
         # ---- iteration
         ## get selected indices of χ_k in ascending order under weight
-        get_sorted_idx!(idx_A, cache_sz_val, cache_sz_idx, fe_arr_χ, weight);
+        get_sorted_idx!(idx_A, sz_val, sz_idx, arr_fe_χ, weight);
         ## get χ_{k + 1} and seleted indices in ascending order of it.
         ## note that `idx_B` for `SCHEME_CORRECT` is updated correctly too.
-        iterateχ!(fe_arr_χ, idx_B, arr_Φ, M);
+        
+        iterateχ!(arr_fe_χ, idx_B, arr_fe_Φ, M);
 
         ## get selected indices of χ_{k + 1} in ascending order under weight
         ## for correction-scheme except `SCHEME_CORRECT`.
-        _is_scheme(remove_bitmode(SCHEME_ALL_CORRECT, SCHEME_CORRECT)) && get_sorted_idx!(idx_B, cache_sz_val, cache_sz_idx, fe_arr_χ, weight)
+        _is_scheme(remove_bitmode(SCHEME_ALL_CORRECT, SCHEME_CORRECT)) && get_sorted_idx!(idx_B, sz_val, sz_idx, arr_fe_χ, weight)
 
         # ---- post-process χ 
-        _is_scheme(SCHEME_OLD) && post_interpolate!(fe_arr_χ, arr_χ_old, 0.5)
+        _is_scheme(SCHEME_OLD) && post_interpolate!(arr_fe_χ, arr_old_χ, 0.5)
 
         if _is_scheme(SCHEME_WALK)
-            _vol = M / length(fe_arr_χ)
+            _vol = M / n
             random_window!(arr_rand_χ, arr_rand_kernel, _vol, i);
-            post_interpolate!(fe_arr_χ, arr_rand_χ, rand_rate)
+            post_interpolate!(arr_fe_χ, arr_rand_χ, rand_rate)
         end
         if _is_scheme(SCHEME_WINDOW)
             window = arr_rand_χ
             random_window!(window, arr_rand_kernel, max(rand_rate, 0.1), i) 
-            post_interpolate!(fe_arr_χ, arr_χ_old, window)
+            post_interpolate!(arr_fe_χ, arr_old_χ, window)
         end
         
         # ---- compute energy
-        update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
+        smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
         ## solve pde with χ_{k+1} 
         pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
         pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
@@ -299,31 +299,31 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
         @check_tau(Jγ)
         Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-        Ei = Ju + Jγ + Jt
+        Ji = Ju + Jγ + Jt
 
         time_out = time() - time_out
         
 
-        debug && display(heatmap(fe_arr_χ))
+        debug && display(heatmap(arr_fe_χ))
         # ---- prediction correction
         time_in = time()
         n_in_iter = 0
         flag_in_iter_stop = false
         if _is_scheme(SCHEME_ALL_CORRECT)
-            Ei >= E && computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
-            while Ei >= E
+            Ji >= J && computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
+            while Ji >= J
                 n_in_iter += 1
                 if length(sorted_idx_dec) == 0 && length(sorted_idx_inc) == 0 
                     flag_in_iter_stop = true
                     break
                 end
 
-                nonsym_correct!(fe_arr_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
+                nonsym_correct!(arr_fe_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
 
-                debug && display(heatmap(fe_arr_χ))
+                debug && display(heatmap(arr_fe_χ))
 
                 # ---- compute energy
-                update_domain_funcs!(fe_arr_χ, fe_arr_χ₂, fe_arr_Gτχ, fe_arr_Gτχ₂, motion)
+                smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
                 ## solve pde with χ_{k+1} 
                 pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
                 pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
@@ -332,7 +332,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
                 @check_tau(Jγ)
                 Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-                Ei = Ju + Jγ + Jt
+                Ji = Ju + Jγ + Jt
             end
         end
 
@@ -344,15 +344,14 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- log output
         time_in = n_in_iter == 0 ? 0. : time() - time_in
-        volₖ = sum(fe_arr_χ) / length(fe_arr_χ)
-        # curϵ = abs((E - Ei)/E)
-        curϵ = norm(fe_arr_χ - arr_χ_old, 2)
+        volₖ = sum(arr_fe_χ) / n
+        curϵ = norm(arr_fe_χ - arr_old_χ, 2)
 
         τ = get_tau(motion)
-        debug && @info "run_$(run_i): E = $Ei, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
+        debug && @info "run_$(run_i): E = $Ji, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
         with_logger(tb_lg) do 
-            image_χ = TBImage(fe_arr_χ, WH)
-            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt E= E
+            image_χ = TBImage(arr_fe_χ, WH)
+            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt J= J
             @info "domain" χ= image_χ log_step_increment=0
             @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0
@@ -364,14 +363,14 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             @warn "τ is less than 1e-8, now break."
             break
         end
-        E = Ei
+        J = Ji
         i += 1
         rand_rate *= 0.99
     end
 
     vtk_file_pvd[Float64(max_it + 1)] = createvtk(trian, vtk_file_prefix * string(max_it + 1); cellfields= cell_fields)
 
-    return arr_χ₀, fe_arr_χ
+    return arr_init_χ, arr_fe_χ
 end
 
 """

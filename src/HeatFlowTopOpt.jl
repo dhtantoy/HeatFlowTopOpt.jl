@@ -91,6 +91,7 @@ include("utils.jl")
 include("motion.jl")
 include("fem.jl")
 include("update.jl")
+include("multidomain.jl")
 include("tb.jl")
 include("post.jl")
 end

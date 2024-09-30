@@ -208,7 +208,7 @@ compute the convolution of `A` and store the result in `out`. Remember to copy t
         $(sub)
     end
 end
-function (c::Conv)(out, A::Array)
+function (c::Conv)(out::Array, A::Array)
     ExA = ExArray(A)
     c(out, ExA)
     nothing
@@ -310,6 +310,7 @@ get_pdsz(gf::GaussianFilter) = size(gf.kernel, 1) ÷ 2
     get_tau(gf::GaussianFilter)
 get_tau(gf::GaussianFilter) = gf.τ[]
 """
+get_tau(gf::GaussianFilter) = gf.τ[]
 
 """
     get_kernel(gf::GaussianFilter)
@@ -332,10 +333,10 @@ function update_tau!(gf::GaussianFilter, ratio)
 end
 
 """
-    (gf::GaussianFilter{T, D})(out::Array{T, D}, A::Matrix)
+    (gf::GaussianFilter{T, D})(out::Array{T, D}, A::Array)
 compute the Gaussian filter of `A` and store the result in `out`.
 """
-function (gf::GaussianFilter{T, 2})(out, A::Matrix) where T
+function (gf::GaussianFilter{T, 2})(out::Array, A::Array) where T
     m, n = size(out)
     kernel = gf.kernel
     @tturbo for J1 = axes(out, 1)

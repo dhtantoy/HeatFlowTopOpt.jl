@@ -171,14 +171,14 @@ solve `A * x = b` and store the result in `x`.
 end
 
 """
-    update_domain_funcs!(cache_fe_arr_χ, cache_fe_arr_χ₂, cache_fe_arr_Gτχ, cache_fe_arr_Gτχ₂, motion)
-update `cache_arr_χ₂`, `cache_arr_Gτχ` and `cache_arr_Gτχ₂` according to `cache_arr_χ`. Note that 
+    smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
+update `arr_fe_χ₂`, `arr_fe_Gτχ` and `arr_fe_Gτχ₂` according to `arr_fe_χ`. Note that 
 this will alter corresponding `fe_χ₂`, `fe_Gτχ` and `fe_Gτχ₂`.
 """
-function update_domain_funcs!(cache_fe_arr_χ, cache_fe_arr_χ₂, cache_fe_arr_Gτχ, cache_fe_arr_Gτχ₂, motion) 
-    @turbo @. cache_fe_arr_χ₂ = 1 - cache_fe_arr_χ
-    motion(cache_fe_arr_Gτχ, cache_fe_arr_χ)
-    motion(cache_fe_arr_Gτχ₂, cache_fe_arr_χ₂)
+function smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion) 
+    @. arr_fe_χ₂ = 1 - arr_fe_χ
+    motion(arr_fe_Gτχ, arr_fe_χ)
+    motion(arr_fe_Gτχ₂, arr_fe_χ₂)
     return nothing
 end
 
