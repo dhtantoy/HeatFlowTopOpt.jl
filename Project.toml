@@ -34,6 +34,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 TensorBoardLogger = "899adc3e-224a-11e9-021f-63837185c80f"
 ValueHistories = "98cad3c8-aec3-5f06-8e41-884608649ab7"
 VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
+gmsh_jll = "630162c2-fc9b-58b3-9910-8442a8a132e6"
 
 [compat]
 julia = "1"
