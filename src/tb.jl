@@ -9,7 +9,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     begin 
         # independent parameters
         max_it = config["max_it"]
-        N::Int = config["N"]
+        Nc::Int = config["Nc"]
         ϵ = config["ϵ"]
         ϵ_ratio = config["ϵ_ratio"] 
         save_iter::Int = config["save_iter"]
@@ -36,13 +36,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         α⁻ = config["α⁻"]
         kf = config["kf"]
         ks = config["ks"]
-        γ = config["γ"]
+        # γ = config["γ"]
         Ts = config["Ts"]
         Re = config["Re"]
+        Pr = config["Pr"]
         δt = config["δt"]
-        δu = config["δu"]
-        ud = VectorValue(config["ud⋅n"], 0.)
-        g = VectorValue(config["g⋅n"], 0.)
+        Vd = VectorValue(config["Vdₓ"], 0.)
+        Pd = config["Pd"]
         Td = config["Td"]
         ModelFile = config["ModelFile"]
 
@@ -109,24 +109,26 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     
     α = α⁻ * fe_Gτχ₂; κ = kf * fe_Gτχ + ks * fe_Gτχ₂;
 
-    @inline _a_V((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p + q*(∇⋅u))dx # + ∫(∇(p)⋅∇(q)*δu)dx
-    @inline _l_V((v, q)) = ∫( g ⋅ v)dσ
-    @inline a_V((uc, ub, p), (vc, vb, q)) = _a_V((uc + ub, p), (vc + vb, q))
-    @inline l_V((vc, vb, q)) = _l_V((vc + vb, q))
-    VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(Val(:StokesMini), trian, a_V, [5, 6], ud)
+    @inline _a_V((u, p), (v, q), dx̃) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p - q*(∇⋅u))dx̃ 
+    @inline a_V((uc, ub, p), (vc, vb, q)) = _a_V((uc + ub, p), (vc + vb, q), dx)
+    @inline l_V((vc, vb, q)) = 0.
+    # VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(
+    #     Val(:StokesMini), trian, a_V, "wall", Vd, ["inlet", "outlet"], [Pd, 0.],)
+    VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(
+        Val(:StokesMini), trian, a_V, ["wall", "inlet"], [VectorValue(0., 0.), Vd])
+    
     uch, ubh, _ = Xh; uchˢ, ubhˢ, _ = Xhˢ;
     uh = uch + ubh; uhˢ = uchˢ + ubhˢ;
 
-    @inline a_T(T, v) = ∫(∇(T) ⋅ ∇(v) * κ + uh⋅∇(T)*v*Re + γ*κ*T*v)dx + ∫((uh⋅∇(T)*Re + γ*κ*T)*(Re*uh⋅∇(v)*δt))dx
-    @inline l_T(v) = ∫(γ*κ*Ts*v)*dx + ∫(γ*κ*Ts*Re*uh⋅∇(v)*δt)dx
-    T_test, T_trial, T_assem, T_A, T_LU, T_b, Th, Thˢ = init_single_space(Val(:Heat), trian, a_T, [7], Td)
+    @inline a_T(T, v) = ∫(∇(T) ⋅ ∇(v) + uh⋅∇(T)*v*Re*Pr + κ*T*v)dx + ∫((uh⋅∇(T)*Re*Pr + κ*T)*(uh⋅∇(v)*Re*Pr)*δt)dx
+    @inline l_T(v) = ∫(κ*Ts*v)*dx + ∫(uh⋅∇(v)*κ*Ts*Re*Pr*δt)dx
+    T_test, T_trial, T_assem, T_A, T_LU, T_b, Th, Thˢ = init_single_space(Val(:Heat), trian, a_T, "inlet", Td)
 
-    @inline a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) * κ + uh⋅∇(v)*Tˢ*Re + γ*κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re - γ*κ*Tˢ)*(Re*uh⋅∇(v))*δt)dx 
-    @inline l_Tˢ(v) = ∫(- β₃ * κ *γ * v)dx + ∫(β₃ * κ *γ * (Re*uh⋅∇(v))*δt)dx
-    @inline _a_Vˢ((uˢ, pˢ), (v, q)) = ∫(μ*∇(uˢ)⊙∇(v) + uˢ⋅v*α + (∇⋅v)*pˢ - q*(∇⋅uˢ))dx #+ ∫(∇(pˢ)⋅∇(q)*δu)dx
-    @inline _l_Vˢ((v, q)) = ∫(-(∇(Th))⋅v*Re*Thˢ)dx #+ ∫(-(∇(Th))⋅ ∇(q) *Re*Thˢ * δu)dx
-    @inline a_Vˢ((uc, ub, p), (vc, vb, q)) = _a_Vˢ((uc + ub, p), (vc + vb, q))
-    @inline l_Vˢ((vc, vb, q)) = _l_Vˢ((vc + vb, q))
+
+    @inline a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) - uh⋅∇(Tˢ)*v*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx 
+    @inline l_Tˢ(v) = ∫(- β₃ * κ * v)dx + ∫(β₃ * κ * (Re*Pr*uh⋅∇(v))*δt)dx
+    @inline l_Vˢ((vc, vb, q)) = ∫(∇(Thˢ)⋅(vc + vb)*Re*Pr*Th)dx
+    # @inline l_Vˢ((v, q)) = ∫(∇(Thˢ)⋅v*Re*Pr*Th)dx
 
     cell_fields = ["Th" => Th, "uh" => uh, "Gτχ" => fe_Gτχ]
     # -------------------------------------------------------------------------------------
@@ -138,11 +140,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
     pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
 
-    Ju = β₁/2 * sum( _a_V((uh, 0), (uh, 0)) )
-    Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+    Ju = β₁/2 * sum( _a_V((uh, 0), (uh, 0), dx̂) )
+    Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ )
     @check_tau(Jγ)
-    Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
-    E = Ju + Jγ + Jt
+    Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ )
+    J = Ju + Jγ + Jt
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- log output -----------------------------------
@@ -186,11 +188,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- solve adjoint pde
         pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trial, T_A, T_LU, T_b, T_assem)
-        pde_solve!(Xhˢ, a_Vˢ, l_Vˢ, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
+        pde_solve!(Xhˢ, a_V, l_Vˢ, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
 
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
-        fe_Φ = -α⁻ * (β₁/2*uh⋅uh + 2*uh⋅uhˢ) + (kf - ks)*(∇(Th)⋅∇(Thˢ)) + γ*(ks - kf)*((Ts - Th)*(Thˢ + β₃))
+        fe_Φ = -α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ) + (ks - kf)*((Ts - Th)*(Thˢ + β₃))
         _compute_node_value!(arr_fe_Φ, fe_Φ, trian)
         motion(arr_cache_Φ_1, arr_fe_Φ)
         ## perimeter of interface
@@ -204,24 +206,15 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             if debug
                 c_fs = [
                     "Th" => Th,
-                    "∇(Th)" => ∇(Th),
                     "uh" => uh,
                     "∇⋅uh" => divergence(uh), 
                     "Thˢ" => Thˢ, 
-                    "∇(Thˢ)" => ∇(Thˢ),
                     "uhˢ" => uhˢ, 
-                    "∇⋅uhˢ" => divergence(uhˢ),
-                    "χ" => fe_χ,
+                    "RHS_Vˢ" => ∇(Thˢ)*Re*Pr*Th,
+                    "Gτχ" => fe_Gτχ,
                     "fe_Φ" => fe_Φ,
-                    "uh⋅uhˢ" => uh⋅uhˢ,
-                    "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
-                    "(Th - Ts) * Thˢ" => (Ts - Th) * Thˢ,
-                    "-Re*Thˢ*∇Th" => -Re * Thˢ * ∇(Th),
-                    "- β₁/2 * α⁻ * uh⋅uh" => - β₁/2 * α⁻ * uh⋅uh,
-                    "β₃ * γ * (ks - kf) * (Ts - Th)" => β₃ * γ * (ks - kf) * (Ts - Th),
+                    "(ks - kf) * (Th - Ts) * (Thˢ + 1)" => (ks - kf) * (Ts - Th) * (Thˢ + 1),
                     "- α⁻ * (uh⋅uhˢ)" => - α⁻ * (uh⋅uhˢ),
-                    "(kf - ks) * ∇(Th)⋅∇(Thˢ)" => (kf - ks) * ∇(Th)⋅∇(Thˢ),
-                    "γ * (kf - ks) * (Th - Ts) * Thˢ" => γ * (kf - ks) * (Th - Ts) * Thˢ,
                     ]
             else
                 c_fs = cell_fields
@@ -289,10 +282,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
         pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
         ## energy
-        Ju = β₁/2 * sum( _a_V((uh, 0), (uh, 0)) )
-        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+        Ju = β₁/2 * sum( _a_V((uh, 0), (uh, 0), dx̂) )
+        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ )
         @check_tau(Jγ)
-        Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
+        Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ )
         Ji = Ju + Jγ + Jt
 
         time_out = time() - time_out
@@ -322,10 +315,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 pde_solve!(Xh, a_V, l_V, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
                 pde_solve!(Th, a_T, l_T, T_test, T_trial, T_A, T_LU, T_b, T_assem)
                 ## energy
-                Ju = β₁/2 * sum( _a_V((uh, 0), (uh, 0)) )
-                Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx )
+                Ju = β₁/2 * sum( _a_V((uh, 0), (uh, 0), dx̂) )
+                Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ )
                 @check_tau(Jγ)
-                Jt = β₃* sum( ∫((Th - Ts)*κ*γ)dx )
+                Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ )
                 Ji = Ju + Jγ + Jt
             end
         end
