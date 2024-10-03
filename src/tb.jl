@@ -260,7 +260,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         ## get selected indices of χ_{k + 1} in ascending order under weight
         ## for correction-scheme except `SCHEME_CORRECT`.
-        _is_scheme(remove_bitmode(SCHEME_ALL_CORRECT, SCHEME_CORRECT)) && get_sorted_idx!(idx_B, sz_val, sz_idx, arr_fe_χ, weight)
+        _is_scheme(remove_bitmode(SCHEME_ALL_CORRECT, SCHEME_CORRECT | SCHEME_CORRECT_PHI)) && get_sorted_idx!(idx_B, sz_val, sz_idx, arr_fe_χ, weight)
 
         # ---- post-process χ 
         _is_scheme(SCHEME_OLD) && post_interpolate!(arr_fe_χ, arr_old_χ, 0.5)
@@ -296,8 +296,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         time_in = time()
         n_in_iter = 0
         flag_in_iter_stop = false
-        if _is_scheme(SCHEME_ALL_CORRECT)
-            Ji >= J && computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
+        if _is_scheme(SCHEME_ALL_CORRECT) && Ji >= J
+            _is_scheme(SCHEME_CORRECT_PHI) || computediffset!(sorted_idx_dec, sorted_idx_inc, idx_A, idx_B, weight)
             while Ji >= J
                 n_in_iter += 1
                 if length(sorted_idx_dec) == 0 && length(sorted_idx_inc) == 0 
@@ -305,7 +305,12 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                     break
                 end
 
-                nonsym_correct!(arr_fe_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
+                if _is_scheme(SCHEME_CORRECT_PHI)
+                    post_interpolate!(arr_fe_Φ, arr_old_Φ, 1., correct_rate)
+                    iterateχ!(arr_fe_χ, idx_B, arr_fe_Φ, M);
+                else
+                    nonsym_correct!(arr_fe_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
+                end
 
                 debug && display(heatmap(arr_fe_χ))
 
