@@ -1,6 +1,3 @@
-# cache_* denotes the cache for array-form variable with the same type and size.
-
-
 """
 simulation with on config and save the logs and results to vtk file.
 """
@@ -20,6 +17,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         up = config["up"]
         down = config["down"]
         τ₀ = config["τ₀"]
+        pdsz::Int = config["pdsz"]
         InitType = config["InitType"]
         InitFile = config["InitFile"]
         InitKey = config["InitKey"]
@@ -51,17 +49,11 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
             β₂ = 0.
         end
     end
-    if motion_type == "conv"
-        motion = Conv(Float64, 2, Nc + 1, τ₀; time= debug ? 1 : 120);
-    elseif motion_type == "gf"
-        pdsz = config["pdsz"]
-        motion = GaussianFilter(Float64, 2, Nc + 1, τ₀; pdsz= pdsz)
-    elseif motion_type == ""
-        motion = copy!
-    else
-        error("motion type not defined!")
-    end 
 
+    # ----------------------------------- motion setting -----------------------------------
+    motion = Motion(Val(Symbol(motion_type)), Float64, 2, Nc + 1, τ₀; time= debug ? 1 : 120, pdsz= pdsz)
+    # -------------------------------------------------------------------------------------
+    
     # ----------------------------------- model setting ----------------------------------- 
     h = 1 / Nc; μ = 1/Re; rand_kernel_dim = (Nc+1) ÷ rand_kernel_dim;
     model, perm = getmodel(Nc)

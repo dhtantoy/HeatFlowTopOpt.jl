@@ -119,56 +119,8 @@ function make_path(path::AbstractString, mode::UInt16)
     chmod(path, mode)
 end
 
-function TensorBoardLogger.deserialize_tensor_summary(::TensorBoardLogger.tensorboard.var"Summary.Value")
-    return nothing 
-end
-
-
 function remove_bitmode(scheme::Unsigned, mod::Unsigned)
     return scheme & (~ mod)
-end
-
-"""
-    scheme_to_str(s::Vector)
-convert the stable scheme from a vector of `Unsigned` to a vector of `String`.
-"""
-scheme_to_str(s::Vector) = scheme_to_str.(s)
-
-"""
-    parse_scheme(scheme::Unsigned)
-convert the scheme from `Unsigned` to `String`.
-"""
-function scheme_to_str(scheme::Unsigned)
-    ret = String[]
-    
-    for (k, v) in ALL_SCHEME_PAIRS
-        if !iszero(scheme & k)
-            push!(ret, v)
-        end
-    end
-    return join(ret, '-')
-end
-
-"""
-    str_to_scheme(v::Vector)
-convert the scheme from a vector of `String` to a vector of `Unsigned`.
-"""
-str_to_scheme(v::Vector) = str_to_scheme.(v)
-
-"""
-    str_to_scheme(str::String)
-convert the scheme from `String` to `Unsigned`.
-"""
-function str_to_scheme(str::String)
-    ret = zero(typeof(SCHEME_NULL))
-    ss = split(str, '-')
-
-    for (k, v) in ALL_SCHEME_PAIRS
-        if v in ss
-            ret |= k
-        end
-    end
-    return ret
 end
 
 macro check_tau(val)

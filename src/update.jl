@@ -1,3 +1,87 @@
+# UInt16 at most 16 cases
+const U16_UNIT = 0x0001
+# ---- more details in codes.
+# ICTM
+const SCHEME_NULL = U16_UNIT >> 1
+# addition of χ_k, χ_{k+1}
+const SCHEME_OLD = U16_UNIT << 0
+# prediction-correction
+const SCHEME_CORRECT = U16_UNIT << 1
+# restrict to boundary
+const SCHEME_BOUNDARY = U16_UNIT << 2
+# randomly change χ_k and χ_{k+1}
+const SCHEME_CHANGE = U16_UNIT << 3
+# random noise of χ_k
+const SCHEME_WALK = U16_UNIT << 4
+# randomly partly update
+const SCHEME_WINDOW = U16_UNIT << 5
+# random correction with Φ
+const SCHEME_PROB_CORRECT = U16_UNIT << 6
+# random correction.
+const SCHEME_RAND_CORRECT = U16_UNIT << 7
+# addition of Φ_k, Φ_{k+1}
+const SCHEME_OLD_PHI = U16_UNIT << 8
+# reversed prediction-correction
+const SCHEME_CORRECT_REV = U16_UNIT << 9
+
+const SCHEME_ALL_CORRECT = SCHEME_CORRECT | SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT | SCHEME_CORRECT_REV
+
+const ALL_SCHEME_PAIRS = [
+    SCHEME_OLD => "old",
+    SCHEME_CORRECT => "correct",
+    SCHEME_BOUNDARY => "boundary",
+    SCHEME_CHANGE => "change",
+    SCHEME_WALK => "walk",
+    SCHEME_WINDOW => "window",
+    SCHEME_PROB_CORRECT => "prob_correct",
+    SCHEME_RAND_CORRECT => "rand_correct",
+    SCHEME_OLD_PHI => "old_phi",
+    SCHEME_CORRECT_REV => "correct_rev",
+] 
+
+"""
+    scheme_to_str(s::Vector)
+convert the stable scheme from a vector of `Unsigned` to a vector of `String`.
+"""
+scheme_to_str(s::Vector) = scheme_to_str.(s)
+
+"""
+    parse_scheme(scheme::Unsigned)
+convert the scheme from `Unsigned` to `String`.
+"""
+function scheme_to_str(scheme::Unsigned)
+    ret = String[]
+    
+    for (k, v) in ALL_SCHEME_PAIRS
+        if !iszero(scheme & k)
+            push!(ret, v)
+        end
+    end
+    return join(ret, '-')
+end
+
+"""
+    str_to_scheme(v::Vector)
+convert the scheme from a vector of `String` to a vector of `Unsigned`.
+"""
+str_to_scheme(v::Vector) = str_to_scheme.(v)
+
+"""
+    str_to_scheme(str::String)
+convert the scheme from `String` to `Unsigned`.
+"""
+function str_to_scheme(str::String)
+    ret = zero(typeof(SCHEME_NULL))
+    ss = split(str, '-')
+
+    for (k, v) in ALL_SCHEME_PAIRS
+        if v in ss
+            ret |= k
+        end
+    end
+    return ret
+end
+
 """
     random_window!(A, kernel, vol, i)
 in-place generation of a random `0-1` `kernel` with seed `i` and volume `vol`,

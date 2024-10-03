@@ -7,6 +7,10 @@ struct DFTypst{T}
     names::Vector{String}
 end
 
+function TensorBoardLogger.deserialize_tensor_summary(::TensorBoardLogger.tensorboard.var"Summary.Value")
+    return nothing 
+end
+
 """
     _get_run_hparams(path::String)
 get the hyperparameters of a run from tensorboard log file located at `path`.

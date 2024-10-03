@@ -12,6 +12,8 @@ Implementation of a smoother. the following interface should be implemented:
 - `get_kernel(m::Motion)`: return the kernel of the smoother.
 
 - `update_tau!(m::Motion, ratio)`: update the parameter `τ` of the smoother with the given `ratio` (τ *= ratio) and recompute the kernel if necessary.
+
+- `Motion(::Val{F}, ::Type, dim::Int, N::Int, τ::Float64; kwargs...)`: constructor of the smoother.
 """
 abstract type Motion end
 
@@ -20,6 +22,7 @@ get_pdsz(m::Motion) = error("method get_pdsz for $(typeof(m)) is not defined.")
 get_tau(m::Motion) = error("method get_tau for $(typeof(m)) is not defined.")
 get_kernel(m::Motion) = error("method get_kernel for $(typeof(m)) is not defined.")
 update_tau!(m::Motion, ratio) = error("method update_tau! for $(typeof(m)) is not defined.")
+Motion(::Val{F}, args...; kwargs...) where {F} = error("method Motion of $(F) is not defined.")
 
 ## -------------- convolution --------------
 """
@@ -227,6 +230,14 @@ function update_tau!(conv::Conv, ratio)
     return nothing
 end
 
+"""
+    Motion(::Val{:conv}, args...; kwargs...)
+construct a convolution smoother.
+
+# Arguments
+time = 1: the seconds limit for the FFTW planning.
+"""
+Motion(::Val{:conv}, args...; time= time, kwargs...) = Conv(args...; time= time)
 
 ## -------------- median filter --------------
 
@@ -236,6 +247,8 @@ function update_tau!(::typeof(copy!), ratio)
     return nothing
 end
 get_tau(::typeof(copy!)) = 0.
+
+Motion(::Val{Symbol("")}, args...; kwargs...) = copy!
 
 
 ## -------------- weighted average filter --------------
@@ -356,3 +369,12 @@ function (gf::GaussianFilter{T, 2})(out::Array, A::Array) where T
     end
     return nothing
 end
+
+"""
+    Motion(::Val{:gf}, args...; kwargs...)
+construct a Gaussian filter.
+
+# Arguments
+- `pdsz`: the padding size of the Gaussian kernel.
+"""
+Motion(::Val{:gf}, args...; pdsz= pdsz, kwargs...) = GaussianFilter(args...; pdsz= pdsz)
