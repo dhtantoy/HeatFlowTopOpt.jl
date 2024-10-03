@@ -24,6 +24,8 @@ const SCHEME_OLD_PHI = U16_UNIT << 8
 # reversed prediction-correction
 const SCHEME_CORRECT_REV = U16_UNIT << 9
 
+const SCHEME_GRADIENT = U16_UNIT << 10
+
 const SCHEME_ALL_CORRECT = SCHEME_CORRECT | SCHEME_PROB_CORRECT | SCHEME_RAND_CORRECT | SCHEME_CORRECT_REV
 
 const ALL_SCHEME_PAIRS = [
@@ -37,6 +39,7 @@ const ALL_SCHEME_PAIRS = [
     SCHEME_RAND_CORRECT => "rand_correct",
     SCHEME_OLD_PHI => "old_phi",
     SCHEME_CORRECT_REV => "correct_rev",
+    SCHEME_GRADIENT => "gradient"
 ] 
 
 """

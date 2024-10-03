@@ -12,6 +12,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         save_iter::Int = config["save_iter"]
         save_start::Int = config["save_start"]
         vol = config["vol"]
+        lr = config["lr"]
 
         # parameters corresponding to motion
         up = config["up"]
@@ -222,6 +223,9 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         # ---- pre-process χ
         ## stablization with Φ_k when i >= 2, note that when i = 1, arr_Φ_old = 0
         _is_scheme(SCHEME_OLD_PHI) && post_interpolate!(arr_fe_Φ, arr_old_Φ, 0.5)
+
+        ## iterate with gradient of energy
+        _is_scheme(SCHEME_GRADIENT) && post_interpolate!(arr_fe_Φ, arr_old_Φ, lr, 1)
 
         Φ_min, Φ_max = extrema(arr_fe_Φ)
 

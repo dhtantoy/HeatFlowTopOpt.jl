@@ -23,10 +23,12 @@ vec_configs = [
     "Ts" => 1.,
 
     # motion paramter
+    "lr" => 1e-3,
     "up" => 0.95,
     "down" => 0.05,
     "τ₀" => 1e-4,
     "motion_type" => "conv",
+    "pdsz" => 1.,
 
     # top opt parameter
     "correct_rate" => 0.5,
@@ -39,7 +41,7 @@ vec_configs = [
     "InitType" => "Rand",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => SCHEME_PROB_CORRECT,
+    "scheme" => SCHEME_GRADIENT,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
