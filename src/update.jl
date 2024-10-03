@@ -111,19 +111,38 @@ in-place update of `A` with `B` and `w` as the weight. `(1-w)A + wB -> A`, i.e.
 `A + w(B - A) -> A`.
 """
 function post_interpolate!(A, B, w::Real)
-    r = 1 - w
+    post_interpolate!(A, B, 1-w, w)
+    return nothing
+end
+
+"""
+    post_interpolate!(A::Array, B::Array, α::Real, β::Real)
+in-place update of `A` with `B` and `α` and `β` as the weight. `αA + βB -> A`.
+"""
+function post_interpolate!(A::Array, B::Array, α::Real, β::Real)
     @turbo for i = eachindex(A)
-        A[i] = B[i] * w + A[i] * r
+        A[i] = B[i] * β + A[i] * α
     end
     return nothing
 end
-    
+
 """
-    post_interpolate!(A, B, W)
+    post_interpolate!(A::Array, B::Array, α::AbstractArray, β::AbstractArray)
+in-place update of `A` with `B` and `α` and `β` as the weight. `α⊗A + β⊗B -> A`.
+"""
+function post_interpolate!(A::Array, B::Array, α::AbstractArray, β::AbstractArray)
+    @turbo for i = eachindex(A)
+        A[i] = A[i] * α[i] + B[i] * β[i]
+    end
+    return nothing
+    
+end
+"""
+    post_interpolate!(A::Array, B::Array, W::AbstractArray{T})
 in-place update of `A` with `B` and `W` as the weight. `(1-W)⊗A + W⊗B -> A`, i.e. 
 `A + W⊗(B - A) -> A`.
 """
-function post_interpolate!(A, B, W::AbstractArray{T}) where T
+function post_interpolate!(A::Array, B::Array, W::AbstractArray{T}) where T
     @turbo for i = eachindex(A)
         A[i] = B[i] + W[i] * (A[i] - B[i])
         # A[i] = B[i] * W[i] + A[i] * (one(T) - W[i])
@@ -164,7 +183,7 @@ end
 
 
 """
-    iterateχ!(χ, order, Φ, M)
+    iterateχ!(χ, order::SzVector{Int}, Φ::AbstractArray{T}, M)
 in-place iteration of `χ` with volume `M`, and the ascending order of selected `Φ` is stored in `order`.
 """
 function iterateχ!(χ, order::SzVector{Int}, Φ::AbstractArray{T}, M) where {T}

@@ -17,59 +17,39 @@ function PermArray(A::Vector{T}, ::Nothing, dim) where {T}
     return reshape(A, sz...)
 end
 
-for op in (:size, :getindex, :copy, :setindex!, :sum)
-    @eval Base.$op(v::PermArray, args...; kwargs...) = $op(v.AP, args...; kwargs...)
-end
-for op in (:eachindex, :zero, :zeros)
-    @eval Base.$op(v::PermArray) = $op(v.AP)
+# Base
+for op in (:size, :getindex, :copy, :setindex!, :sum, :eachindex, :zero, :zeros, :copy!, :copyto!)
+    @eval Base.$op(A::PermArray, args...; kwargs...) = $op(A.AP, args...; kwargs...)
 end
 
-for op in (:init_chi!, :post_interpolate!, :post_phi!, 
-            :rand_post_phi!, :iterateχ!, :nonsym_correct!)
-    @eval function $op(v::PermArray, args...; kwargs...) 
-        $op(v.AP, args...; kwargs...)
-        v.A[v.P] = v.AP
-    end
-    return nothing
-end
-function Base.copy!(v::PermArray, args...)
-    copy!(v.AP, args...)
-    v.A[v.P] = v.AP
-    return nothing
-end
-for op in (:copy!, :copyto!)
-    @eval Base.$op(s::AbstractArray{T, D}, v::PermArray{T, D}) where {T, D} = $op(s, v.AP)
-end
-function _compute_node_value!(v::PermArray, args...)
-    _compute_node_value!(v.A, args...)
-    v.AP[:] = v.A[v.P]
-    return nothing
-end
-
-for conv in (:Conv, :GaussianFilter)
-    @eval function (conv::$conv)(out, in::PermArray)
-        conv(out, in.AP)
+# (*, ...) and update A
+for op in (:init_chi!, :post_phi!, :rand_post_phi!, :iterateχ!, :nonsym_correct!, :post_interpolate!)
+    @eval function $op(A::PermArray, args...; kwargs...) 
+        $op(A.AP, args...; kwargs...)
+        A.A[A.P] = A.AP
         return nothing
     end
-    @eval function (conv::$conv)(out::PermArray, in)
-        conv(out.AP, in)
-        out.A[out.P] = out.AP
-        return nothing
-    end
-    @eval function (conv::$conv)(out::PermArray, in::PermArray)
-        conv(out, in.AP)
+end
+# (*, ...) and update AP
+for op in (:_compute_node_value!,)
+    @eval function $op(A::PermArray, args...; kwargs...) 
+        $op(A.A, args...; kwargs...)
+        A.AP[:] = A.A[A.P]
         return nothing
     end
 end
 
+function (m::Motion)(out::PermArray, in) 
+    m(out.AP, in)
+    out.A[out.P] = out.AP
+    return nothing
+end
 
 function symmetry!(v::PermArray, a; kwargs...)
     symmetry!(v.AP, a; kwargs...)
     v.A[v.P] = v.AP
     return nothing
 end
-
-
 
 # Base.setindex!(v::PermArray, args...) = setindex!(v.AP, args...)
 function Base.show(io::IO, v::PermArray)

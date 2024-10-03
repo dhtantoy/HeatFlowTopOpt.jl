@@ -179,7 +179,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         pde_solve!(Xhˢ, a_Vˢ, l_Vˢ, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
 
         # ---- now all pde solved, then compute Φ
-        ## base gradient of energy
+        ## gradient of energy
         fe_Φ = -α⁻ * (β₁/2*uh⋅uh + 2*uh⋅uhˢ) + (kf - ks)*(∇(Th)⋅∇(Thˢ)) + γ*(ks - kf)*((Ts - Th)*(Thˢ + β₃))
         _compute_node_value!(arr_fe_Φ, fe_Φ, trian)
         motion(arr_cache_Φ_1, arr_fe_Φ)
@@ -230,7 +230,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         ## random change
         _is_scheme(SCHEME_CHANGE) && rand_post_phi!(arr_fe_Φ, vec_idx, Φ_max, round(Int, rand_rate * M), i)
-        
+
+        # ---- iteration
         ## random correction
         if _is_scheme(SCHEME_PROB_CORRECT)
             P = arr_cache_Φ_1
@@ -246,8 +247,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         else
             weight = arr_fe_Φ
         end
-
-        # ---- iteration
         ## get selected indices of χ_k in ascending order under weight
         get_sorted_idx!(idx_A, sz_val, sz_idx, arr_fe_χ, weight);
         ## get χ_{k + 1} and seleted indices in ascending order of it.
