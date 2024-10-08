@@ -112,22 +112,22 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     @inline _a_V((u, p), (v, q), dx̃) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p - q*(∇⋅u))dx̃ 
     @inline a_V((uc, ub, p), (vc, vb, q)) = _a_V((uc + ub, p), (vc + vb, q), dx)
     @inline l_V((vc, vb, q)) = 0.
-    # VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(
-    #     Val(:StokesMini), trian, a_V, "wall", Vd, ["inlet", "outlet"], [Pd, 0.],)
-    VP_test, VP_trial, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(
-        Val(:StokesMini), trian, a_V, ["wall", "inlet"], [VectorValue(0., 0.), Vd])
+    VP_test, VP_trial, VP_trialˢ, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(
+        Val(:StokesMini), trian, a_V, "wall", Vd, ["inlet", "outlet"], [Pd, 0.],)
+    # VP_test, VP_trial, VP_trialˢ, VP_assem, VP_A, VP_LU, VP_b, Xh, Xhˢ = init_single_space(
+    #     Val(:StokesMini), trian, a_V, ["wall", "inlet"], [VectorValue(0., 0.), Vd])
     
     uch, ubh, _ = Xh; uchˢ, ubhˢ, _ = Xhˢ;
     uh = uch + ubh; uhˢ = uchˢ + ubhˢ;
 
     @inline a_T(T, v) = ∫(∇(T) ⋅ ∇(v) + uh⋅∇(T)*v*Re*Pr + κ*T*v)dx + ∫((uh⋅∇(T)*Re*Pr + κ*T)*(uh⋅∇(v)*Re*Pr)*δt)dx
     @inline l_T(v) = ∫(κ*Ts*v)*dx + ∫(uh⋅∇(v)*κ*Ts*Re*Pr*δt)dx
-    T_test, T_trial, T_assem, T_A, T_LU, T_b, Th, Thˢ = init_single_space(Val(:Heat), trian, a_T, "inlet", Td)
+    T_test, T_trial, T_trialˢ, T_assem, T_A, T_LU, T_b, Th, Thˢ = init_single_space(Val(:Heat), trian, a_T, "inlet", Td)
 
 
     @inline a_Tˢ(Tˢ, v) = ∫(∇(Tˢ) ⋅ ∇(v) - uh⋅∇(Tˢ)*v*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx 
     @inline l_Tˢ(v) = ∫(- β₃ * κ * v)dx + ∫(β₃ * κ * (Re*Pr*uh⋅∇(v))*δt)dx
-    @inline l_Vˢ((vc, vb, q)) = ∫(∇(Thˢ)⋅(vc + vb)*Re*Pr*Th)dx
+    @inline l_Vˢ((vc, vb, q)) = ∫(-∇(Th)⋅(vc + vb)*Re*Pr*Thˢ)dx
     # @inline l_Vˢ((v, q)) = ∫(∇(Thˢ)⋅v*Re*Pr*Th)dx
 
     cell_fields = ["Th" => Th, "uh" => uh, "Gτχ" => fe_Gτχ]
@@ -187,8 +187,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         copy!(arr_old_Φ, arr_fe_Φ);
 
         # ---- solve adjoint pde
-        pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trial, T_A, T_LU, T_b, T_assem)
-        pde_solve!(Xhˢ, a_V, l_Vˢ, VP_test, VP_trial, VP_A, VP_LU, VP_b, VP_assem)
+        pde_solve!(Thˢ, a_Tˢ, l_Tˢ, T_test, T_trialˢ, T_A, T_LU, T_b, T_assem)
+        pde_solve!(Xhˢ, a_V, l_Vˢ, VP_test, VP_trialˢ, VP_A, VP_LU, VP_b, VP_assem)
 
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
