@@ -2,6 +2,7 @@ using HeatFlowTopOpt
 using Logging 
 using Gridap 
 using Debugger
+using MKL
 
 const lg = ConsoleLogger()
 

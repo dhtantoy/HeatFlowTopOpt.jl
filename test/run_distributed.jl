@@ -23,8 +23,8 @@ atexit() do
     end
 end
 
-@everywhere using MKL
 @everywhere using HeatFlowTopOpt
+@everywhere using MKL
 
 vec_configs = [
     # pde parameter
