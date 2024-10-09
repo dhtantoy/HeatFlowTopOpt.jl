@@ -17,7 +17,9 @@ using Gridap.Geometry
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.FESpaces
+using Gridap.Algebra
 using BubbleSpaces
+using LineSearches: BackTracking
 import GridapGmsh: gmsh
 
 using LoopVectorization
@@ -37,7 +39,7 @@ using Printf: Format, @sprintf
 
 # # always use OPENBLAS_NUM_THREADS=1 if your application is multithreaded while
 # # using OpenBLAS. This is to avoid oversubscription of threads.
-# BLAS.set_num_threads(1)
+BLAS.set_num_threads(1)
 
 export run_with_configs
 export domain2mp4

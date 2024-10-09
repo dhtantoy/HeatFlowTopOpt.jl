@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.10.4"
+julia_version = "1.10.5"
 manifest_format = "2.0"
-project_hash = "460a1baf06dd9ab147dfb77ec01c0933ac7ba149"
+project_hash = "87689fd8414bd6971200fd71648982887c867f68"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -130,7 +130,7 @@ version = "0.16.43"
 
 [[deps.BubbleSpaces]]
 deps = ["Gridap"]
-git-tree-sha1 = "d4055b16ca534502e75a5e8d256afa967a76ca6c"
+git-tree-sha1 = "f1b04efa665ed6f59cbca79b65cdbce1c14a6685"
 repo-rev = "main"
 repo-url = "git@github.com:dhtantoy/BubbleSpaces.jl.git"
 uuid = "c36bbd6a-dc02-459a-8e07-dbaf74a2df2c"
@@ -2011,7 +2011,7 @@ version = "0.15.2+0"
 [[deps.libblastrampoline_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
-version = "5.8.0+1"
+version = "5.11.0+0"
 
 [[deps.libdecor_jll]]
 deps = ["Artifacts", "Dbus_jll", "JLLWrappers", "Libdl", "Libglvnd_jll", "Pango_jll", "Wayland_jll", "xkbcommon_jll"]

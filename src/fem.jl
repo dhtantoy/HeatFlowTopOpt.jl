@@ -1,5 +1,34 @@
+
 """
-    init_chi!(cache_arr_χ, InitType; kwargs...)
+    struct LinearOpWithCache{O, C, S, W, L}
+        # *
+    end
+cache for solving a linear problem.
+"""
+struct LinearOpWithCache{O, C, S, W, L}
+    aop::O
+    cache::C
+    assem::S
+    weakform::W
+    ls::L
+    LinearOpWithCache(aop, cache, assem, weakform, ls) = new{typeof(aop), typeof(cache), typeof(assem), typeof(weakform), typeof(ls)}(aop, cache, assem, weakform, ls)
+end
+
+"""
+    struct NLOpWithCache{O, C, N}
+        # *
+    end 
+cache for solving a nonlinear problem.
+"""
+struct NLOpWithCache{O, C, N}
+    op::O
+    cache::C
+    nls::N
+    NLOpWithCache(op, cache, nls) = new{typeof(op), typeof(cache), typeof(nls)}(op, cache, nls)
+end
+
+"""
+    init_chi!(arr_χ, InitType; kwargs...)
 in-place initialize `cache_arr_χ` according to `InitType`.
 
 # Arguments
@@ -8,50 +37,50 @@ in-place initialize `cache_arr_χ` according to `InitType`.
 - file::String: file path for initialization.
 - key::String: key for initialization.
 """
-function init_chi!(cache_arr_χ::Array{T}, InitType; vol= 0.4, seed= 0, file="", key="") where T
-    N_node = size(cache_arr_χ, 1)
+function init_chi!(arr_χ::Array{T}, InitType; vol= 0.4, seed= 0, file="", key="") where T
+    N_node = size(arr_χ, 1)
     if InitType == "All"
-        fill!(cache_arr_χ, one(T))
+        fill!(arr_χ, one(T))
     elseif InitType == "File"
         isfile(file) || error("file not found! [$file]") |> throw
         _f = load(file)
         haskey(_f, key) || error("key not found! [$key]") |> throw
-        copy!(cache_arr_χ, _f[key])
+        copy!(arr_χ, _f[key])
     else
-        fill!(cache_arr_χ, zero(T))
+        fill!(arr_χ, zero(T))
 
         if InitType == "Net"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:4:end]
-                cache_arr_χ[:, I] .= 1
-                cache_arr_χ[:, end .- I] .= 1
-                cache_arr_χ[I, :] .= 1
-                cache_arr_χ[end .- I, :] .= 1
+                arr_χ[:, I] .= 1
+                arr_χ[:, end .- I] .= 1
+                arr_χ[I, :] .= 1
+                arr_χ[end .- I, :] .= 1
             end
         elseif InitType == "Lines"
             n = 20
             p = Iterators.partition(1:(N_node >> 1), N_node ÷ n) |> collect
             for I in p[2:4:end]
-                cache_arr_χ[:, I] .= 1
-                cache_arr_χ[:, end .- I] .= 1
+                arr_χ[:, I] .= 1
+                arr_χ[:, end .- I] .= 1
             end
 
         elseif InitType == "Line"
             _n = round(Int, N_node * (1-vol) / 2)
-            cache_arr_χ[:, _n+1 : end-_n] .= 1
+            arr_χ[:, _n+1 : end-_n] .= 1
             # cache_arr_χ[1, :] .= 1
             # cache_arr_χ[end, :] .= 1
         elseif InitType == "Rand"
-            m₁, m₂ = size(cache_arr_χ)
+            m₁, m₂ = size(arr_χ)
             c::Int = ceil(m₂ / 2)
             f::Int = floor(m₂ / 2)
             N = c * m₁
             perm = randperm(Random.seed!(seed), N)
             M = round(Int, N * vol)
-            cache_arr_χ[ perm[1:M] ] .= 1
+            arr_χ[ perm[1:M] ] .= 1
 
-            cache_arr_χ[:, c+1:end] = cache_arr_χ[:, f:-1:1]
+            arr_χ[:, c+1:end] = arr_χ[:, f:-1:1]
         else
             error("InitType not defined!") |> throw
         end
@@ -60,169 +89,105 @@ function init_chi!(cache_arr_χ::Array{T}, InitType; vol= 0.4, seed= 0, file="",
 end
 
 """
-    initSingleSpace(::Val{Flag}, trian, a, diri_args...)
-return test_space, trial_space, assembler, A, b, fe_func, ad_fe_func.
-`diri_args...` is passed to `_test_and_trial_space` dirichlet.
+    init_solve(weakform, trial, test)
+initialize the solver for linear problem.
 """
-function init_single_space(::Val{F}, trian, a, diri_args...) where {F}
-    test, trial, trialˢ = _test_and_trial_space(Val(F), trian, diri_args...)
+function init_solve(weakform, trial, test)
     assem = SparseMatrixAssembler(trial, test)
-    cell_dof_ids = get_cell_dof_ids(trial);
-    du = get_trial_fe_basis(trial)
-    dv = get_fe_basis(test)
-    iwq = a(du, dv).dict[trian]
-    rs = ([iwq], [cell_dof_ids], [cell_dof_ids])
-    b = allocate_vector(assem, (nothing, [cell_dof_ids]))
-    A = allocate_matrix(assem, rs)
-    assemble_matrix!(A, assem, rs)
-    LU = lu(A)
-
-    n = num_free_dofs(trial)
-    # `ones` for nonsingularity of `lu(A)` of heat equations
-    fe_func = FEFunction(trial, ones(Float64, n))
-    ad_fe_func = FEFunction(test, ones(Float64, n))
-    return test, trial, trialˢ, assem, A, LU, b, fe_func, ad_fe_func
+    op = AffineFEOperator(weakform, trial, test, assem)
+    ls = LUSolver()
+    fe_func, cache = solve!(zero(trial), ls, op, nothing)
+    opc = LinearOpWithCache(op, cache, assem, weakform, ls)
+    return opc, fe_func
 end
-
-function _test_and_trial_space(::Val{F}, args...) where {F}
-    error("flag $F not defined!") |> throw
-end
-
-function _test_and_trial_space(::Val{:StokesMini}, trian, dtags, dval)
-    ref_V = LagrangianRefFE(VectorValue{2, Float64}, TRI, 1)
-    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= dtags)
-    V_trial = TrialFESpace(V_test, dval)
-    Vˢ_trial = TrialFESpace(V_test, zeros(VectorValue{2, Float64}, num_dirichlet_tags(V_test)))
-
-    ref_B = BubbleRefFE(VectorValue{2, Float64}, TRI)
-    B_test = TestFESpace(trian, ref_B;)
-    B_trial = TrialFESpace(B_test)
-
-    ref_P = LagrangianRefFE(Float64, TRI, 1)
-    P_test = TestFESpace(trian, ref_P; conformity= :H1, constraint= :zeromean)
-    P_trial = TrialFESpace(P_test)
-
-    trial = MultiFieldFESpace([V_trial, B_trial, P_trial])
-    trialˢ = MultiFieldFESpace([Vˢ_trial, B_trial, P_trial])
-    test = MultiFieldFESpace([V_test, B_test, P_test])
-
-    return test, trial, trialˢ
-end
-function _test_and_trial_space(::Val{:StokesMini}, trian, Vtags, Vvals, Ptags, Pvals)
-    ref_V = LagrangianRefFE(VectorValue{2, Float64}, TRI, 1)
-    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= Vtags)
-    V_trial = TrialFESpace(V_test, Vvals)
-    Vˢ_trial = TrialFESpace(V_test, zeros(VectorValue{2, Float64}, num_dirichlet_tags(V_test)))
-
-    ref_B = BubbleRefFE(VectorValue{2, Float64}, TRI)
-    B_test = TestFESpace(trian, ref_B)
-    B_trial = TrialFESpace(B_test)
-
-    ref_P = LagrangianRefFE(Float64, TRI, 1)
-    P_test = TestFESpace(trian, ref_P; conformity= :H1, dirichlet_tags= Ptags)
-    P_trial = TrialFESpace(P_test, Pvals)
-    P_trialˢ = TrialFESpace(P_test, zeros(Float64, num_dirichlet_tags(P_test)))
-
-    trial = MultiFieldFESpace([V_trial, B_trial, P_trial])
-    trialˢ = MultiFieldFESpace([Vˢ_trial, B_trial, P_trialˢ])
-    test = MultiFieldFESpace([V_test, B_test, P_test])
-
-    return test, trial, trialˢ
-end
-
-function _test_and_trial_space(::Val{:Stokes}, trian, Vtags, Vvals, Ptags, Pvals)
-    ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
-    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= Vtags)
-    V_trial = TrialFESpace(V_test, Vvals)
-    V_trialˢ = TrialFESpace(V_test, zeros(VectorValue{2, Float64}, num_dirichlet_tags(V_test)))
-
-    ref_P = LagrangianRefFE(Float64, TRI, 1)
-    P_test = TestFESpace(trian, ref_P; conformity= :H1, dirichlet_tags= Ptags)
-    P_trial = TrialFESpace(P_test, Pvals)
-    P_trialˢ = TrialFESpace(P_test, zeros(Float64, num_dirichlet_tags(P_test)))
-
-    trial = MultiFieldFESpace([V_trial,P_trial])
-    trialˢ = MultiFieldFESpace([V_trialˢ,P_trialˢ])
-    test = MultiFieldFESpace([V_test, P_test])
-
-    return test, trial, trialˢ
-end
-function _test_and_trial_space(::Val{:Stokes}, trian, Vtags, Vvals)
-    ref_V = ReferenceFE(lagrangian, VectorValue{2, Float64}, 2)
-    V_test = TestFESpace(trian, ref_V; conformity= :H1, dirichlet_tags= Vtags)
-    V_trial = TrialFESpace(V_test, Vvals)
-    V_trialˢ = TrialFESpace(V_test, zeros(VectorValue{2, Float64}, num_dirichlet_tags(V_test)))
-
-    ref_P = ReferenceFE(lagrangian, Float64, 1)
-    P_test = TestFESpace(trian, ref_P; conformity= :H1, constraint= :zeromean)
-    P_trial = TrialFESpace(P_test)
-
-    trial = MultiFieldFESpace([V_trial, P_trial])
-    trialˢ = MultiFieldFESpace([V_trialˢ, P_trial])
-    test = MultiFieldFESpace([V_test, P_test])
-
-    return test, trial, trialˢ
-end
-function _test_and_trial_space(::Val{:Heat}, trian, dtags, dval)
-    ref = ReferenceFE(lagrangian, Float64, 1)
-    test = TestFESpace(trian, ref; conformity= :H1, dirichlet_tags= dtags)
-    trial = TrialFESpace(test, dval)
-    trialˢ = TrialFESpace(test, zeros(Float64, num_dirichlet_tags(test)))
-    return test, trial, trialˢ
-end
-
-
+    
 """
-    solver!(x, A, fa, b)
-solve `A * x = b` and store the result in `x`.
+    init_solve(res, jac, trial, test)
+initialize the solver for nonlinear problem.
 """
-@inline function solver!(x, A, fa, b)
-    copy!(x, b)
-    lu!(fa, A)
-    ldiv!(fa, x)
-    return nothing
+function init_solve(res, jac, trial, test)
+    assem = SparseMatrixAssembler(trial, test)
+    op = FEOperator(res, jac, trial, test, assem)
+    nls = NLSolver(LUSolver(), show_trace=false, method=:newton, linesearch=BackTracking(), ftol= 1e-8)
+    fe_func, cache = solve!(zero(trial), FESolver(nls), op, nothing)
+    opc = NLOpWithCache(op, cache, nls)
+    return opc, fe_func
 end
 
 """
-    smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
-update `arr_fe_χ₂`, `arr_fe_Gτχ` and `arr_fe_Gτχ₂` according to `arr_fe_χ`. Note that 
+    smooth_funcs!(arr_χ, arr_χ₂, arr_Gτχ, arr_Gτχ₂, motion)
+update `arr_χ₂`, `arr_Gτχ` and `arr_Gτχ₂` according to `arr_χ`. Note that 
 this will alter corresponding `fe_χ₂`, `fe_Gτχ` and `fe_Gτχ₂`.
 """
-function smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion) 
-    @. arr_fe_χ₂ = 1 - arr_fe_χ
-    motion(arr_fe_Gτχ, arr_fe_χ)
-    motion(arr_fe_Gτχ₂, arr_fe_χ₂)
+function smooth_funcs!(arr_χ, arr_χ₂, arr_Gτχ, arr_Gτχ₂, motion) 
+    @. arr_χ₂ = 1 - arr_χ
+    motion(arr_Gτχ, arr_χ)
+    motion(arr_Gτχ₂, arr_χ₂)
     return nothing
 end
 
-
 """
-    pde_solve!(fe_func, a, l, test, trial, A, LU, b, assem)
-solve pde and update result `fe_func`.
+    pde_solve!(opc::LinearOpWithCache, fe_func)
+in-place solve the linear problem.
 """
-function pde_solve!(fe_func, a, l, test, trial, A, LU, b, assem)
-    et = eltype(fe_func.free_values)
-    fill!(fe_func.free_values, zero(et))
-    uhd = fe_func
+function pde_solve!(opc::LinearOpWithCache, fe_func)
+    x = get_free_dof_values(fe_func)
+    et = eltype(x)
+    fill!(x, zero(et))
+    feop = opc.aop
+    cache = opc.cache
+    weakform = opc.weakform
+    assem = opc.assem
+    ls = opc.ls
+    A = get_matrix(feop)
+    b = get_vector(feop)
+    test = get_test(feop)
+    trial = get_trial(feop)
 
-    ϕ = get_trial_fe_basis(trial)
-    ψ = get_fe_basis(test)
-    matcontribs = a(ϕ, ψ)
-    veccontribs = l(ψ)
-    data = collect_cell_matrix_and_vector(trial, test, matcontribs, veccontribs, uhd)
+    u = get_trial_fe_basis(trial)
+    v = get_fe_basis(test)
+    matcontribs, veccontribs = weakform(u, v)
+    data = collect_cell_matrix_and_vector(trial, test, matcontribs, veccontribs, fe_func)
     assemble_matrix_and_vector!(A, b, assem, data)
+    op = get_algebraic_operator(feop)
 
-    solver!(fe_func.free_values, A, LU, b)
+    solve!(x, ls, op, cache)
+    nothing
+end
+    
+"""
+    pde_solve!(opc::NLOpWithCache, fe_func)
+in-place solve the nonlinear problem.
+"""
+function pde_solve!(opc::NLOpWithCache, fe_func)
+    x = get_free_dof_values(fe_func)
+    et = eltype(x)
+    fill!(x, zero(et))
+    cache = opc.cache
+    feop = opc.op
+    nls = opc.nls
+    op = get_algebraic_operator(feop)
+
+    f0 = cache.f0
+    j0 = cache.j0
+    ns = cache.ns
+    f! = cache.f!
+    j! = cache.j!
+    fj! = cache.fj!
+    residual_and_jacobian!(f0,j0,op,x)
+    df = Algebra.OnceDifferentiable(f!,j!,fj!,x,f0,j0)
+    numerical_setup!(ns,j0)
+    cache.df = df 
+    cache.result = nothing
+    Algebra._nlsolve_with_updated_cache!(x,nls,op,cache)
+    nothing
 end
 
 
 """
-implementation of version when Triangulation on 
-    GridPortion: a part of the whole domain;  
-    UnstructuredGrid: the whold domain.   
-it(cell-wise) evaluates faster than that(parallelly point-wise).
+    _compute_node_value!(out, op, trian)
+compute the value of each node of `trian` according to the value of its adjacent cells.
 """
-
 function _compute_node_value!(out, op, trian)
     T = eltype(out)
     Dc = num_cell_dims(trian)
