@@ -162,7 +162,7 @@ in-place solve the nonlinear problem.
 function pde_solve!(opc::NLOpWithCache, fe_func)
     x = get_free_dof_values(fe_func)
     et = eltype(x)
-    fill!(x, zero(et))
+    # fill!(x, zero(et))
     cache = opc.cache
     feop = opc.op
     nls = opc.nls
