@@ -171,9 +171,10 @@ function pde_solve!(opc::NLOpWithCache, fe_func)
     f0 = cache.f0
     j0 = cache.j0
     ns = cache.ns
-    f! = cache.f!
-    j! = cache.j!
-    fj! = cache.fj!
+    f!(r,x) = residual!(r,op,x)
+    j!(j,x) = jacobian!(j,op,x)
+    fj!(r,j,x) = residual_and_jacobian!(r,j,op,x)
+    
     residual_and_jacobian!(f0,j0,op,x)
     df = Algebra.OnceDifferentiable(f!,j!,fj!,x,f0,j0)
     numerical_setup!(ns,j0)
