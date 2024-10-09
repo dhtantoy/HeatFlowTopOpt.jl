@@ -1,3 +1,7 @@
+push!(LOAD_PATH, "@pkglock"); 
+using PkgLock; 
+PkgLock.instantiate_precompile()
+
 using Distributed
 
 # # run at 138
