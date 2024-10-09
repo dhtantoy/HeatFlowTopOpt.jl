@@ -411,6 +411,7 @@ function run_with_configs(vec_configs, comments)
     path = joinpath("data", dformat(now(), "yyyy-mm-ddTHH_MM_SS"))
     make_path(path, 0o751)
 
+    # vec_configs.jl
     open(joinpath(path, "vec_configs.jl"), "w") do io
         println(io, vec_configs)
     end
@@ -426,16 +427,13 @@ function run_with_configs(vec_configs, comments)
         "COMMENTS" => comments,
         
     )
-    try 
-        push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
-    catch 
-    end
+    haskey(ENV, "HOSTNAME") && push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
+    
     try 
         push!(dict_info, "COMMIT" => readchomp(`git rev-parse --short HEAD`))
-    catch 
-    end
+    catch; end
 
-
+    # config.toml
     open(joinpath(path, "config.toml"), "w") do io
         dict_vec_config = Dict(vec_configs)
         dict_vec_config["scheme"] = scheme_to_str(dict_vec_config["scheme"]) 
