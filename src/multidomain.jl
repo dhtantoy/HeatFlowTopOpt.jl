@@ -30,7 +30,14 @@ for op in (:init_chi!, :post_interpolate!, :post_phi!,
         $op(v.AP, args...; kwargs...)
         v.A[v.P] = v.AP
     end
-    return nothing
+    @eval function $op(x, v::PermArray, args...; kwargs...) 
+        $op(x, v.AP, args...; kwargs...)
+        return nothing
+    end
+    @eval function $op(x::PermArray, v::PermArray, args...; kwargs...) 
+        $op(x, v.AP, args...; kwargs...)
+        return nothing
+    end
 end
 function Base.copy!(v::PermArray, args...)
     copy!(v.AP, args...)
