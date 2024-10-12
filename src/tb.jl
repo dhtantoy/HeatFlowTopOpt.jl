@@ -132,9 +132,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     uch, ubh, _ = Xh; uh = uch + ubh;
     
     ## ---- Heat
-    @inline a_T(T, v) = ∫(∇(T) ⋅ ∇(v) + uh⋅∇(T)*v*Re*Pr + κ*T*v)dx + ∫((uh⋅∇(T)*Re*Pr + κ*T)*(uh⋅∇(v)*Re*Pr)*δt)dx
-    @inline l_T(v) = ∫(κ*Ts*v)*dx + ∫(uh⋅∇(v)*κ*Ts*Re*Pr*δt)dx
-
     test_T = TestFESpace(trian, LagrangianRefFE(Float64, TRI, 1); conformity= :H1, dirichlet_tags= "inlet")
     trial_T = TrialFESpace(test_T, Td)
     opc_T, Th = init_solve(trial_T, test_T) do T, v
@@ -145,7 +142,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     ## ---- Heat adjoint
     test_Tˢ = test_T; trial_Tˢ = TrialFESpace(test_Tˢ, 0.)
     opc_Tˢ, Thˢ = init_solve(trial_Tˢ, test_Tˢ) do Tˢ, v 
-        ∫(∇(Tˢ) ⋅ ∇(v) - uh⋅∇(Tˢ)*v*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx,
+        ∫(∇(Tˢ) ⋅ ∇(v) + uh⋅∇(v)*Tˢ*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx,
         ∫(- β₃ * κ * v)dx + ∫(β₃ * κ * (Re*Pr*uh⋅∇(v))*δt)dx
     end
 
@@ -157,7 +154,8 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         TrialFESpace(test_VPˢ.spaces[3], [0., 0.])
 
     ])
-    @inline ex_VPˢ((uˢ, pˢ), (v, q)) = ∫(v⋅(- ∇(uˢ)' ⋅ uh + ∇(uh) ⋅ uˢ))dx
+    # @inline ex_VPˢ((uˢ, pˢ), (v, q)) = ∫(v⋅(- ∇(uˢ)' ⋅ uh + ∇(uh) ⋅ uˢ))dx
+    @inline ex_VPˢ((uˢ, pˢ), (v, q)) = ∫( ∇(uh)⋅uˢ⋅v + ∇(v) ⊙ (uh ⊗ uˢ) )dx
     opc_VPˢ, Xhˢ = init_solve(trial_VPˢ, test_VPˢ) do (ucˢ, ubˢ, pˢ), (vc, vb, q)
         lin_VP((ucˢ + ubˢ, pˢ), (vc + vb, q)) + ex_VPˢ((ucˢ + ubˢ, pˢ), (vc + vb, q)),
         ∫(-∇(Th)⋅(vc + vb)*Re*Pr*Thˢ)dx
