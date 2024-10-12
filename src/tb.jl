@@ -188,7 +188,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         haskey(ENV, "HOSTNAME") && push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
         image_χ = TBImage(arr_fe_χ, WH)
         @info "domain" χ= image_χ log_step_increment=0
-        @info "host" base=TBText(DataFrame(dict_info)) log_step_increment=0
+        @info "host" base=TBText(dict_info) log_step_increment=0
         @info "energy" Ju= Ju Jγ= Jγ Jt= Jt J= J
     end
     # -------------------------------------------------------------------------------------
@@ -517,4 +517,26 @@ function parse_vec_configs(vec_configs::Vector)
     appended_config_arr = Iterators.product(broadcasted_config_pairs...) |> collect
 
     return base_config, appended_config_arr
+end
+
+# make TBLogger to be able to log the a dictionary as table.
+function TensorBoardLogger.markdown_repr(d::Dict{String, Any})
+    pairs = collect(d)
+    headers = join(["<th>$(first(x))</th>" for x in pairs], "")
+    vals = join(["<td>$(last(x))</td>" for x in pairs], "")
+    txt = """
+    <table>
+        <thead>
+            <tr>
+                $headers
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                $vals
+            </tr>
+        </tbody>
+    </table>
+    """
+    return txt
 end

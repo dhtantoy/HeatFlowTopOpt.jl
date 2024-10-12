@@ -26,7 +26,6 @@ using TensorBoardLogger
 using FFTW
 using FillArrays
 using SparseArrays
-using DataFrames
 using StatsBase
 
 # # always use OPENBLAS_NUM_THREADS=1 if your application is multithreaded while

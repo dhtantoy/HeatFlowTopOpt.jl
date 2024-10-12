@@ -6,7 +6,6 @@ version = "1.0.0-DEV"
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 BubbleSpaces = "c36bbd6a-dc02-459a-8e07-dbaf74a2df2c"
-DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Debugger = "31a5f54b-26ea-5ae9-a837-f05ce5417438"
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
