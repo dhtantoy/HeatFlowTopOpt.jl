@@ -154,10 +154,10 @@ function getmodel(file, Nc)
     @assert iszero(Nc % 3) "Nc should be a multiple of 3"
     path = joinpath("model", file*"_"*string(Nc)*".msh")
     if isfile(path)
-        @info "file exist, loading from file"
+        # @info "file exist, loading from file";
         m = DiscreteModelFromFile(path)
     else
-        @info "file does not exist, creating new file at $path"
+        # @info "file does not exist, creating new file at $path"
         createGrid(Val(2), path, Nc ÷ 3)
         m = DiscreteModelFromFile(path)
     end

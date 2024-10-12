@@ -119,11 +119,6 @@ function make_path(path::AbstractString, mode::UInt16)
     chmod(path, mode)
 end
 
-function TensorBoardLogger.deserialize_tensor_summary(::TensorBoardLogger.tensorboard.var"Summary.Value")
-    return nothing 
-end
-
-
 function remove_bitmode(scheme::Unsigned, mod::Unsigned)
     return scheme & (~ mod)
 end

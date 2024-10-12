@@ -86,7 +86,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     init_chi!(arr_fe_χ, InitType; vol= vol, file= InitFile, key= InitKey);
     smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion) 
     n = length(arr_fe_χ)
-    debug && display(heatmap(arr_fe_χ))
 
     arr_rand_χ = zero(arr_fe_χ);
     arr_rand_kernel = zeros(rand_kernel_dim, rand_kernel_dim);
@@ -319,8 +318,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         time_out = time() - time_out
         
-
-        debug && display(heatmap(arr_fe_χ))
         # ---- prediction correction
         time_in = time()
         n_in_iter = 0
@@ -336,7 +333,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
                 nonsym_correct!(arr_fe_χ, sorted_idx_dec, sorted_idx_inc, correct_rate)
 
-                debug && display(heatmap(arr_fe_χ))
 
                 # ---- compute energy
                 smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
@@ -402,21 +398,24 @@ end
     - vec_configs.jl: save the `vec_configs` code to reuse directly.
 """
 function run_with_configs(vec_configs, comments)
+    @info "handling configs ..."; flush(stdout);
+
     idx = findfirst(((k, _),) -> k == "max_it", vec_configs)
     max_it = last(vec_configs[idx])
 
     base_config, appended_config_arr = parse_vec_configs(vec_configs)
 
-    # data path 
-    path = joinpath("data", dformat(now(), "yyyy-mm-ddTHH_MM_SS"))
+    path = joinpath("data", Dates.format(now(), "yyyy-mm-ddTHH_MM_SS"))
     make_path(path, 0o751)
+    @info "data will be stored in $path"; flush(stdout);
 
-    # vec_configs.jl
+    @info "saving configs to `vec_configs.jl` ..."; flush(stdout);
     open(joinpath(path, "vec_configs.jl"), "w") do io
         println(io, vec_configs)
+        flush(io)
     end
     
-    # info
+    @info "handling environment ..."; flush(stdout);
     dict_info = Dict(
         "LOGNAME" => ENV["LOGNAME"],
         "PWD" => ENV["PWD"],
@@ -428,12 +427,11 @@ function run_with_configs(vec_configs, comments)
         
     )
     haskey(ENV, "HOSTNAME") && push!(dict_info, "HOSTNAME" => ENV["HOSTNAME"])
-    
     try 
         push!(dict_info, "COMMIT" => readchomp(`git rev-parse --short HEAD`))
     catch; end
 
-    # config.toml
+    @info "saving parameters to `config.toml` ..."; flush(stdout);
     open(joinpath(path, "config.toml"), "w") do io
         dict_vec_config = Dict(vec_configs)
         dict_vec_config["scheme"] = scheme_to_str(dict_vec_config["scheme"]) 
@@ -448,18 +446,19 @@ function run_with_configs(vec_configs, comments)
             end
             return el
         end
+        flush(io)
     end
 
-    # tensorboard script
+    @info "write bash script to `tensorboard.sh` ..."; flush(stdout);
     tb_path_prefix = joinpath(dict_info["PWD"], path, "tb")
     make_path(tb_path_prefix, 0o753)
-
     sh_file_name = joinpath(path, "tensorboard.sh")
     touch(sh_file_name)
     chmod(sh_file_name, 0o755)
     open(sh_file_name, "w") do io
         println(io, "#!/bin/bash")
         println(io, "tensorboard --logdir=./tb --port=\$1 --samples_per_plugin=images=$(max_it+1)")
+        flush(io)
     end
 
     jld2_prefix = joinpath(path, "jld2")
@@ -471,6 +470,7 @@ function run_with_configs(vec_configs, comments)
     err_prefix = joinpath(path, "errors")
     make_path(err_prefix, 0o753)
 
+    @info "start running ..."; flush(stdout);
     pmap(eachindex(appended_config_arr)) do i
         multi_config = Dict{String, Any}(appended_config_arr[i])
         config = merge(base_config, multi_config)
@@ -499,6 +499,7 @@ function run_with_configs(vec_configs, comments)
         catch e
             open(joinpath(err_prefix, "run_$i.err"), "w") do io
                 println(io, current_exceptions())
+                flush(io)
             end
         finally
             close(tb_lg)

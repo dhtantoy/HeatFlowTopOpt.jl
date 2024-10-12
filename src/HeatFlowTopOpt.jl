@@ -2,7 +2,6 @@ module HeatFlowTopOpt
 # Write your package code here.
 
 using Base.Cartesian
-using Base.Threads
 using Distributed
 
 using Random
@@ -10,7 +9,7 @@ using LinearAlgebra
 using JLD2
 import TOML
 using Logging
-using Dates: now, format as dformat, DateTime
+using Dates
 
 using Gridap
 using Gridap.Geometry
@@ -24,21 +23,15 @@ import GridapGmsh: gmsh
 
 using LoopVectorization
 using TensorBoardLogger
-import ProtoBuf as PB
 using FFTW
-using FillArrays: Fill
-using SparseArrays: sparse
+using FillArrays
+using SparseArrays
 using DataFrames
-using ValueHistories: MVHistory
-using VideoIO: open_video_out
-using StatsBase: pweights, sample!
-using FileIO: save
-using Plots
-using Printf: Format, @sprintf
-
+using StatsBase
 
 # # always use OPENBLAS_NUM_THREADS=1 if your application is multithreaded while
 # # using OpenBLAS. This is to avoid oversubscription of threads.
+using MKL
 BLAS.set_num_threads(1)
 
 export run_with_configs
@@ -97,5 +90,4 @@ include("fem.jl")
 include("update.jl")
 include("multidomain.jl")
 include("tb.jl")
-include("post.jl")
 end
