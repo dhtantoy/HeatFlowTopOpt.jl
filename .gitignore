@@ -5,3 +5,4 @@ model/*
 .vscode
 test/test*
 vtk_test
+init

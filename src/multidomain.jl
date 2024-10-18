@@ -53,6 +53,9 @@ function _compute_node_value!(v::PermArray, args...)
     return nothing
 end
 
+phi_to_prob!(P::Array, W::PermArray, x) =  phi_to_prob!(P, W.AP, x)
+   
+
 for conv in (:Conv, :GaussianFilter)
     @eval function (conv::$conv)(out, in::PermArray)
         conv(out, in.AP)
