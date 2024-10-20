@@ -169,10 +169,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     volₖ = sum(arr_fe_χ) / n;
     M = round(Int, n * vol);
     
-    Ju = β₁/2 * sum( ∫(∇(uh)⊙∇(uh)*μ + uh⋅uh*α)dx̂ )
-    Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ )
-    @check_tau(Jγ)
-    Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ )
+    Ju, Jγ, Jt = inline_Js()
     J = Ju + Jγ + Jt
     # -------------------------------------------------------------------------------------
 
@@ -308,10 +305,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         pde_solve!(opc_VP, Xh)
         pde_solve!(opc_T, Th)
         ## energy
-        Ju = β₁/2 * sum( ∫(∇(uh)⊙∇(uh)*μ + uh⋅uh*α)dx̂ )
-        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ )
-        @check_tau(Jγ)
-        Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ )
+        Ju, Jγ, Jt = inline_Js()
         Ji = Ju + Jγ + Jt
 
         time_out = time() - time_out
@@ -338,11 +332,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
                 pde_solve!(opc_VP, Xh)
                 pde_solve!(opc_T, Th)
                 ## energy
-                Ju = β₁/2 * sum( ∫(∇(uh)⊙∇(uh)*μ + uh⋅uh*α)dx̂ )
-                Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ )
-                @check_tau(Jγ)
-                Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ )
-                J = Ju + Jγ + Jt
+                Ju, Jγ, Jt = inline_Js()
                 Ji = Ju + Jγ + Jt
             end
         end
