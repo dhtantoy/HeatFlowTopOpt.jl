@@ -113,9 +113,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     @inline lin_VP((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p - q*(∇⋅u))dx 
     @inline nl_V(u, v) = ∫(v⋅( ∇(u)' ⋅ u) )dx
     @inline dnl_V(u, du, v) = ∫(v⋅( ∇(du)' ⋅ u + ∇(u)' ⋅ du) )dx
-    @inline res_VP((uc, ub, p), (vc, vb, q)) = lin_VP((uc + ub, p), (vc + vb, q)) + nl_V(uc + ub, vc + vb)
-    @inline jac_VP((uc, ub, p), (duc, dub, dp), (vc, vb, q)) = lin_VP((duc + dub, dp), (vc + vb, q)) + dnl_V(uc + ub, duc + dub, vc + vb)
-
+    @inline res_VP((u, p), (v, q)) = lin_VP((u, p), (v, q)) + nl_V(u, v)
+    @inline jac_VP((u, p), (du, dp), (v, q)) = lin_VP((du, dp), (v, q)) + dnl_V(u, du, v)
+    @inline res_miniVP((uc, ub, p), (vc, vb, q)) = res_VP((uc + ub, p), (vc + vb, q))
+    @inline jac_miniVP((uc, ub, p), (duc, dub, dp), (vc, vb, q)) = jac_VP((uc + ub, p), (duc + dub, dp), (vc + vb, q))
 
     test_VP = MultiFieldFESpace([
         TestFESpace(trian, LagrangianRefFE(VectorValue{2, Float64}, TRI, 1); conformity= :H1, dirichlet_tags= "wall"),
@@ -128,21 +129,21 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         TrialFESpace(test_VP.spaces[3], [Pd, 0.])
 
     ])
-    opc_VP, Xh = init_solve(res_VP, jac_VP, trial_VP, test_VP)
+    opc_VP, Xh = init_solve(res_miniVP, jac_miniVP, trial_VP, test_VP)
     uch, ubh, _ = Xh; uh = uch + ubh;
     
     ## ---- Heat
     test_T = TestFESpace(trian, LagrangianRefFE(Float64, TRI, 1); conformity= :H1, dirichlet_tags= "inlet")
     trial_T = TrialFESpace(test_T, Td)
     opc_T, Th = init_solve(trial_T, test_T) do T, v
-        ∫(∇(T) ⋅ ∇(v) + uh⋅∇(T)*v*Re*Pr + κ*T*v)dx + ∫((uh⋅∇(T)*Re*Pr + κ*T)*(uh⋅∇(v)*Re*Pr)*δt)dx, 
+        ∫(κ * ∇(T) ⋅ ∇(v) + uh⋅∇(T)*v*Re*Pr + κ*T*v)dx + ∫((uh⋅∇(T)*Re*Pr + κ*T)*(uh⋅∇(v)*Re*Pr)*δt)dx, 
         ∫(κ*Ts*v)*dx + ∫(uh⋅∇(v)*κ*Ts*Re*Pr*δt)dx
     end
 
     ## ---- Heat adjoint
     test_Tˢ = test_T; trial_Tˢ = TrialFESpace(test_Tˢ, 0.)
     opc_Tˢ, Thˢ = init_solve(trial_Tˢ, test_Tˢ) do Tˢ, v 
-        ∫(∇(Tˢ) ⋅ ∇(v) + uh⋅∇(v)*Tˢ*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx,
+        ∫(κ * ∇(Tˢ) ⋅ ∇(v) + uh⋅∇(v)*Tˢ*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx,
         ∫(- β₃ * κ * v)dx + ∫(β₃ * κ * (Re*Pr*uh⋅∇(v))*δt)dx
     end
 
@@ -151,16 +152,24 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     trial_VPˢ = MultiFieldFESpace([
         TrialFESpace(test_VPˢ.spaces[1], VectorValue(0., 0.)),
         TrialFESpace(test_VPˢ.spaces[2]),
-        TrialFESpace(test_VPˢ.spaces[3], [0., 0.])
+        TrialFESpace(test_VPˢ.spaces[3], [-Pd, 0.])
 
     ])
-    # @inline ex_VPˢ((uˢ, pˢ), (v, q)) = ∫(v⋅(- ∇(uˢ)' ⋅ uh + ∇(uh) ⋅ uˢ))dx
     @inline ex_VPˢ((uˢ, pˢ), (v, q)) = ∫( ∇(uh)⋅uˢ⋅v + ∇(v) ⊙ (uh ⊗ uˢ) )dx
     opc_VPˢ, Xhˢ = init_solve(trial_VPˢ, test_VPˢ) do (ucˢ, ubˢ, pˢ), (vc, vb, q)
         lin_VP((ucˢ + ubˢ, pˢ), (vc + vb, q)) + ex_VPˢ((ucˢ + ubˢ, pˢ), (vc + vb, q)),
         ∫(-∇(Th)⋅(vc + vb)*Re*Pr*Thˢ)dx
     end
     uchˢ, ubhˢ, _ = Xhˢ; uhˢ = uchˢ + ubhˢ;
+
+    fe_Φ = -α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ) + (ks - kf)*((Ts - Th)*(Thˢ + β₃)) + (kf - ks)*∇(Th)⋅∇(Thˢ)
+    @inline function inline_Js()
+        Ju = β₁/2 * sum( ∫(∇(uh)⊙∇(uh)*μ + uh⋅uh*α)dx̂ );
+        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ );
+        @check_tau(Jγ);
+        Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ );
+        return Ju, Jγ, Jt
+    end
 
     cell_fields = ["Th" => Th, "uh" => uh, "Gτχ" => fe_Gτχ]
     # -------------------------------------------------------------------------------------
@@ -215,7 +224,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
-        fe_Φ = -α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ) + (ks - kf)*((Ts - Th)*(Thˢ + β₃))
         _compute_node_value!(arr_fe_Φ, fe_Φ, trian)
         motion(arr_cache_Φ_1, arr_fe_Φ)
         ## perimeter of interface
