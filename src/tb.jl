@@ -95,6 +95,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
     # ----------------------------------- array-form Φ -------------------------
     arr_fe_Φ = PermArray(zeros(num_free_dofs(aux_space)), perm, dim);
+    debug_Φ = PermArray(zeros(num_free_dofs(aux_space)), perm, dim);
     arr_cache_Φ_1 = zero(arr_fe_Φ);
     arr_cache_Φ_2 = zero(arr_fe_Φ);
     arr_old_Φ = zero(arr_fe_Φ);
@@ -222,6 +223,38 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         pde_solve!(opc_Tˢ, Thˢ)
         pde_solve!(opc_VPˢ, Xhˢ)
 
+        # ---- saving data
+        if i >= save_start && mod(i, save_iter) == 0
+            if debug
+                _compute_node_value!(debug_Φ, ∇(Th)⋅∇(Thˢ), trian)
+                motion(arr_cache_Φ_1, debug_Φ)
+                symmetry!(debug_Φ, arr_cache_Φ_1)
+                __f = FEFunction(aux_space, debug_Φ.A)
+                c_fs = [
+                    "Th" => Th,
+                    "∇(Th)" => ∇(Th),
+                    "∇(Thˢ)" => ∇(Thˢ),
+                    "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
+                    "Gτ*(∇(Th)⋅∇(Thˢ))" => __f,
+                    "uh" => uh,
+                    "∇⋅uh" => divergence(uh), 
+                    "uh⋅uh" => uh⋅uh,
+                    "uh⋅uhˢ" => uh⋅uhˢ,
+                    "Thˢ" => Thˢ, 
+                    "uhˢ" => uhˢ, 
+                    "RHS_Vˢ" => ∇(Thˢ)*Re*Pr*Th,
+                    "Gτχ" => fe_Gτχ,
+                    "fe_Φ" => fe_Φ,
+                    "(kf - ks)*∇(Th)⋅∇(Thˢ)" => (kf - ks)*∇(Th)⋅∇(Thˢ),
+                    "(ks - kf)*((Ts - Th)*(Thˢ + β₃))" => (ks - kf)*((Ts - Th)*(Thˢ + β₃)),
+                    "-α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ)" => -α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ),
+                    ]
+            else
+                c_fs = cell_fields
+            end
+            vtk_file_pvd[Float64(i)] =  createvtk(trian, vtk_file_prefix * string(i); cellfields= c_fs)
+        end
+
         # ---- now all pde solved, then compute Φ
         ## base gradient of energy
         _compute_node_value!(arr_fe_Φ, fe_Φ, trian)
@@ -231,27 +264,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         @. arr_cache_Φ_1 += _r * (arr_fe_Gτχ₂ - arr_fe_Gτχ)
         ## post-processing for symmetry
         symmetry!(arr_fe_Φ, arr_cache_Φ_1; dims= 2)
-
-        # ---- saving data
-        if i >= save_start && mod(i, save_iter) == 0
-            if debug
-                c_fs = [
-                    "Th" => Th,
-                    "uh" => uh,
-                    "∇⋅uh" => divergence(uh), 
-                    "Thˢ" => Thˢ, 
-                    "uhˢ" => uhˢ, 
-                    "RHS_Vˢ" => ∇(Thˢ)*Re*Pr*Th,
-                    "Gτχ" => fe_Gτχ,
-                    "fe_Φ" => fe_Φ,
-                    "(ks - kf) * (Th - Ts) * (Thˢ + 1)" => (ks - kf) * (Ts - Th) * (Thˢ + 1),
-                    "- α⁻ * (uh⋅uhˢ)" => - α⁻ * (uh⋅uhˢ),
-                    ]
-            else
-                c_fs = cell_fields
-            end
-            vtk_file_pvd[Float64(i)] =  createvtk(trian, vtk_file_prefix * string(i); cellfields= c_fs)
-        end
 
         # ---- pre-process χ
         ## stablization with Φ_k when i >= 2, note that when i = 1, arr_Φ_old = 0
