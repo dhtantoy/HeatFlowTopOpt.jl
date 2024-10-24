@@ -6,7 +6,7 @@ addprocs(
         [
             ("c95", 1),
             ("c0130",1),
-            ("yhxiang@197", 1),
+            # ("yhxiang@197", 1),
             ("c0123", 1),
             ("c0124", 1),
         ], 
@@ -22,20 +22,13 @@ addprocs(
 
 vec_configs = [
     # pde parameter
-    "β₁" => 0.,
-    "β₂" => 0.,
-    "β₃" => 1,
-    "δt" => 0.,
-    "α⁻" => [100, 200],
-    "kf" => 0.,
-    "ks" => 10,
-    "Re" => [300, 400, 500],
-    "Pr" => 6.7,
-    "Ts" => 1.,
-    "Vdₓ" => 0.,
-    "Td" => 0.0,
-    "Pd" => 1.,
-    "Ts" => 1.,
+    "η" => 0.,
+    "α⁻" => [1e4, 1e6],
+    "E" => 3e9,
+    "θ" => 0.3,
+    "Emin" => 1e-9,
+    "ν" => 1e-3,
+    "Vdₓ" => 1.,
 
     # motion paramter
     "up" => 0.95,
@@ -45,24 +38,24 @@ vec_configs = [
     "pdsz" => 3,
 
     # top opt parameter
-    "correct_rate" => 0.8,
+    "correct_rate" => 0.5,
     "ϵ_ratio" => 0.5,
     "ϵ" => 10., 
-    "save_iter" => 100,
+    "save_iter" => 50,
     "save_start" => 0,
-    "vol" => [0.6, 0.7],
-    "max_it" => 100,
-    "InitType" => ["Line", "Lines", "Rand"],
+    "vol" => 0.1,
+    "max_it" => 50,
+    "InitType" => "Rand",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => SCHEME_NULL,
+    "scheme" => [SCHEME_NULL, SCHEME_CORRECT],
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
     # model parameter
-    "Nc" => 300,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
-    "ModelFile" => "lcr_model"
+    "Nc" => 200 * 0.6,  #
+    "ModelFile" => "ela_flow"
 ];
-comments = "test newer config"
+comments = "ela-flow model"
 
 run_with_configs(vec_configs, comments)

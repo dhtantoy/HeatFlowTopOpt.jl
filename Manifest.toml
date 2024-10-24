@@ -125,7 +125,7 @@ version = "0.16.43"
 
 [[deps.BubbleSpaces]]
 deps = ["Gridap"]
-git-tree-sha1 = "eed6e0b942e090129301019abf1898899d1a5fdd"
+git-tree-sha1 = "ab085390f37b1be3c18cbba5bd0fd2388366c575"
 repo-rev = "main"
 repo-url = "git@github.com:dhtantoy/BubbleSpaces.jl.git"
 uuid = "c36bbd6a-dc02-459a-8e07-dbaf74a2df2c"

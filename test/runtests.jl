@@ -8,20 +8,13 @@ const lg = ConsoleLogger()
 
 vec_configs = [
     # pde parameter
-    "β₁" => 0.,
-    "β₂" => 0.,
-    "β₃" => 1,
-    "δt" => 0.,
-    "α⁻" => 1000,
-    "kf" => 0.,
-    "ks" => 10,
-    "Re" => 100,
-    "Pr" => 6.7,
-    "Ts" => 1.,
+    "η" => 0.,
+    "α⁻" => 1e9,
+    "E" => 3e9,
+    "θ" => 0.3,
+    "Emin" => 1e-9,
+    "ν" => 1e-3,
     "Vdₓ" => 1.,
-    "Td" => 0.0,
-    "Pd" => 0.,
-    "Ts" => 1.,
 
     # motion paramter
     "up" => 0.95,
@@ -36,18 +29,18 @@ vec_configs = [
     "ϵ" => 10., 
     "save_iter" => 1,
     "save_start" => 0,
-    "vol" => 0.6,
+    "vol" => 0.1,
     "max_it" => 10,
-    "InitType" => "Line",
+    "InitType" => "Rand",
     "InitFile" => "",
     "InitKey" => "",
-    "scheme" => SCHEME_CORRECT,
+    "scheme" => SCHEME_NULL,
     "rand_rate" => 0.5,
     "rand_kernel_dim" => 4,
 
     # model parameter
-    "Nc" => 300,  # 240 for Line initialization, 240 ÷ 2 ÷ 20
-    "ModelFile" => "lcr_model"
+    "Nc" => 300 * 0.6,  #
+    "ModelFile" => "ela_flow"
 ];
 
 base_config, appended_config_arr = HeatFlowTopOpt.parse_vec_configs(vec_configs)

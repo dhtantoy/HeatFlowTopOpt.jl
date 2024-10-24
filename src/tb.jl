@@ -15,6 +15,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         save_iter::Int = config["save_iter"]
         save_start::Int = config["save_start"]
         vol = config["vol"]
+        
 
         # parameters corresponding to motion
         up = config["up"]
@@ -30,28 +31,22 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         rand_kernel_dim::Int = config["rand_kernel_dim"]
         
         # parameters corresponding to PDE
-        β₁ = config["β₁"]
-        β₂ = config["β₂"]
-        β₃ = config["β₃"]
+        η = config["η"]
         α⁻ = config["α⁻"]
-        kf = config["kf"]
-        ks = config["ks"]
-        # γ = config["γ"]
-        Ts = config["Ts"]
-        Re = config["Re"]
-        Pr = config["Pr"]
-        δt = config["δt"]
+        E = config["E"]
+        θ = config["θ"]
+        Emin = config["Emin"]
+        ν = config["ν"]
         Vd = VectorValue(config["Vdₓ"], 0.)
-        Pd = config["Pd"]
-        Td = config["Td"]
         ModelFile = config["ModelFile"]
 
         @inline _is_scheme(s::Unsigned) = !iszero( scheme & s )
 
         if _is_scheme(SCHEME_WALK | SCHEME_CHANGE) || isempty(motion_type)
             τ₀ = zero(τ₀)
-            β₂ = 0.
         end
+
+        μ = E / (2(1 + θ)); λ = E * θ / ((1 + θ) * (1 - 2θ));
     end
     if motion_type == "conv"
         motion = Conv(Float64, 2, Nc + 1, τ₀; time= debug ? 1 : 120);
@@ -65,26 +60,22 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     end 
 
     # ----------------------------------- model setting ----------------------------------- 
-    Nc = Nc ÷ 3 * 3; h = 1 / Nc; μ = 1/Re; rand_kernel_dim = (Nc+1) ÷ rand_kernel_dim;
+    h = 1 / Nc; rand_kernel_dim = (Nc+1) ÷ rand_kernel_dim;
     model, perm = getmodel(ModelFile, Nc)
-    dim = num_dims(model); δt *= h^dim; τ = τ₀;
+    dim = num_dims(model); τ = τ₀;
     aux_space = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); conformity= :H1);
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- cache for indicators ---------------------------
     # `fe_*` denotes `FEFunction`-from
     fe_χ = FEFunction(aux_space, ones(num_free_dofs(aux_space)));
-    fe_χ₂ = FEFunction(aux_space, zeros(num_free_dofs(aux_space)));
     fe_Gτχ = FEFunction(aux_space, ones(num_free_dofs(aux_space)));
-    fe_Gτχ₂ = FEFunction(aux_space, zeros(num_free_dofs(aux_space)));
     
     # changes of `arr_fe_*` will be reflected in `fe_*`. 
     arr_fe_χ = PermArray(fe_χ.free_values, perm, dim);
-    arr_fe_χ₂ = PermArray(fe_χ₂.free_values, perm, dim);
     arr_fe_Gτχ = PermArray(fe_Gτχ.free_values, perm, dim);
-    arr_fe_Gτχ₂ = PermArray(fe_Gτχ₂.free_values, perm, dim);
     init_chi!(arr_fe_χ, InitType; vol= vol, file= InitFile, key= InitKey);
-    smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion) 
+    smooth_funcs!(arr_fe_χ, arr_fe_Gτχ, motion) 
     n = length(arr_fe_χ)
 
     arr_rand_χ = zero(arr_fe_χ);
@@ -107,80 +98,70 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
     motion_trian = Triangulation(model, tags= "motion_domain");
     dx = Measure(trian, 4);
     dx̂ = Measure(motion_trian, 4);
+    bdtags = ["inlet", "outlet", "wall"];
     
-    α = α⁻ * fe_Gτχ₂; κ = kf * fe_Gτχ + ks * fe_Gτχ₂;
+    @inline α = α⁻ * fe_Gτχ;
+    I = TensorValue(1., 0., 0., 1.);
+    @inline E⁰(εu) = 2μ*εu + λ*tr(εu)*I;
+    @inline opE(εu) = ((1 - Emin)*fe_Gτχ + Emin)*E⁰(εu);
 
-    ## ---- Navier Stokes
-    @inline lin_VP((u, p), (v, q)) = ∫(∇(u)⊙∇(v)*μ + u⋅v*α - (∇⋅v)*p - q*(∇⋅u))dx 
-    @inline nl_V(u, v) = ∫(v⋅( ∇(u)' ⋅ u) )dx
-    @inline dnl_V(u, du, v) = ∫(v⋅( ∇(du)' ⋅ u + ∇(u)' ⋅ du) )dx
-    @inline res_VP((u, p), (v, q)) = lin_VP((u, p), (v, q)) + nl_V(u, v)
-    @inline jac_VP((u, p), (du, dp), (v, q)) = lin_VP((du, dp), (v, q)) + dnl_V(u, du, v)
-    @inline res_miniVP((uc, ub, p), (vc, vb, q)) = res_VP((uc + ub, p), (vc + vb, q))
-    @inline jac_miniVP((uc, ub, p), (duc, dub, dp), (vc, vb, q)) = jac_VP((uc + ub, p), (duc + dub, dp), (vc + vb, q))
-
+    ## ---- Stokes
+    @inline a((u, p), (v, q)) = ∫(2ν*(∇(u)⊙∇(v)) - p*(∇⋅v) - q*(∇⋅u) + α*(u⋅v))dx
     test_VP = MultiFieldFESpace([
-        TestFESpace(trian, LagrangianRefFE(VectorValue{2, Float64}, TRI, 1); conformity= :H1, dirichlet_tags= "wall"),
+        TestFESpace(trian, LagrangianRefFE(VectorValue{2, Float64}, TRI, 1); conformity= :H1, dirichlet_tags= ["wall", "inlet"]),
         TestFESpace(trian, BubbleRefFE(VectorValue{2, Float64}, TRI)),
-        TestFESpace(trian, LagrangianRefFE(Float64, TRI, 1); conformity= :H1, dirichlet_tags= ["inlet", "outlet"])
+        TestFESpace(trian, LagrangianRefFE(Float64, TRI, 1); conformity= :H1, constraint= :zeromean)
     ])
     trial_VP = MultiFieldFESpace([
-        TrialFESpace(test_VP.spaces[1], Vd),
+        TrialFESpace(test_VP.spaces[1], [VectorValue(0., 0.), Vd]),
         TrialFESpace(test_VP.spaces[2]),
-        TrialFESpace(test_VP.spaces[3], [Pd, 0.])
+        TrialFESpace(test_VP.spaces[3])
 
     ])
-    opc_VP, Xh = init_solve(res_miniVP, jac_miniVP, trial_VP, test_VP)
-    uch, ubh, _ = Xh; uh = uch + ubh;
+    opc_VP, Xh = init_solve(trial_VP, test_VP) do (uc, ub, p), (vc, vb, q)
+        return a((uc + ub, p), (vc + vb, q)), 0
+    end
+    ufch, ufbh, ph = Xh; ufh = ufch + ufbh;
     
-    ## ---- Heat
-    test_T = TestFESpace(trian, LagrangianRefFE(Float64, TRI, 1); conformity= :H1, dirichlet_tags= "inlet")
-    trial_T = TrialFESpace(test_T, Td)
-    opc_T, Th = init_solve(trial_T, test_T) do T, v
-        ∫(κ * ∇(T) ⋅ ∇(v) + uh⋅∇(T)*v*Re*Pr + κ*T*v)dx + ∫((uh⋅∇(T)*Re*Pr + κ*T)*(uh⋅∇(v)*Re*Pr)*δt)dx, 
-        ∫(κ*Ts*v)*dx + ∫(uh⋅∇(v)*κ*Ts*Re*Pr*δt)dx
+    ## ---- elasticity
+    test_E = TestFESpace(trian, LagrangianRefFE(VectorValue{2, Float64}, TRI, 1); conformity= :H1, dirichlet_tags= bdtags)
+    trial_E = TrialFESpace(test_E, VectorValue(0., 0.))
+    opc_E, ush = init_solve(trial_E, test_E) do u, v
+        ∫(opE(ε(u))⊙ε(v))dx, ∫(-fe_Gτχ*α*ufh⋅v)dx
     end
 
-    ## ---- Heat adjoint
-    test_Tˢ = test_T; trial_Tˢ = TrialFESpace(test_Tˢ, 0.)
-    opc_Tˢ, Thˢ = init_solve(trial_Tˢ, test_Tˢ) do Tˢ, v 
-        ∫(κ * ∇(Tˢ) ⋅ ∇(v) + uh⋅∇(v)*Tˢ*Re*Pr + κ*Tˢ*v)dx + ∫((uh⋅∇(Tˢ)*Re*Pr - κ*Tˢ)*(uh⋅∇(v)Re*Pr)*δt)dx,
-        ∫(- β₃ * κ * v)dx + ∫(β₃ * κ * (Re*Pr*uh⋅∇(v))*δt)dx
-    end
+    ## ---- elasticity adjoint
+    ushˢ = ush
 
     ## ---- Navier Stokes adjoint
     test_VPˢ = test_VP
     trial_VPˢ = MultiFieldFESpace([
         TrialFESpace(test_VPˢ.spaces[1], VectorValue(0., 0.)),
         TrialFESpace(test_VPˢ.spaces[2]),
-        TrialFESpace(test_VPˢ.spaces[3], [-Pd, 0.])
+        TrialFESpace(test_VPˢ.spaces[3])
 
     ])
-    @inline ex_VPˢ((uˢ, pˢ), (v, q)) = ∫( ∇(uh)⋅uˢ⋅v + ∇(v) ⊙ (uh ⊗ uˢ) )dx
     opc_VPˢ, Xhˢ = init_solve(trial_VPˢ, test_VPˢ) do (ucˢ, ubˢ, pˢ), (vc, vb, q)
-        lin_VP((ucˢ + ubˢ, pˢ), (vc + vb, q)) + ex_VPˢ((ucˢ + ubˢ, pˢ), (vc + vb, q)),
-        ∫(-∇(Th)⋅(vc + vb)*Re*Pr*Thˢ)dx
+        a((ucˢ + ubˢ, pˢ), (vc + vb, q)),  ∫(-fe_Gτχ*α*ushˢ⋅(vc + vb))dx
     end
-    uchˢ, ubhˢ, _ = Xhˢ; uhˢ = uchˢ + ubhˢ;
+    ufchˢ, ufbhˢ, _ = Xhˢ; ufhˢ = ufchˢ + ufbhˢ;
 
-    fe_Φ = -α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ) + (ks - kf)*((Ts - Th)*(Thˢ + β₃)) + (kf - ks)*∇(Th)⋅∇(Thˢ)
+    fe_Φ = (1 - Emin)*(E⁰(ε(ush)) ⊙ (ε(1/2*ush - ushˢ))) + α⁻*(η/2*ufh ⋅ ufh + ufh⋅ufhˢ) - (∇(ufh) + ph*I)⊙ε(ushˢ)
     @inline function inline_Js()
-        Ju = β₁/2 * sum( ∫(∇(uh)⊙∇(uh)*μ + uh⋅uh*α)dx̂ );
-        Jγ = β₂ * sqrt(π/τ) * sum( ∫(fe_χ * fe_Gτχ₂)dx̂ );
-        @check_tau(Jγ);
-        Jt = β₃* sum( ∫((Th - Ts)*κ)dx̂ );
-        return Ju, Jγ, Jt
+        Ju = η/2 * sum( ∫(∇(ufh)⊙∇(ufh)*ν*2 + ufh⋅ufh*α)dx̂ );
+        Je = 1/2 * sum( ∫(opE(ε(ush)) ⊙ ε(ush))dx̂ )
+        return Ju, Je
     end
 
-    cell_fields = ["Th" => Th, "uh" => uh, "Gτχ" => fe_Gτχ]
+    cell_fields = ["ush" => ush, "uh" => ufh, "Gτχ" => fe_Gτχ]
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- initial quantities -----------------------------------
     volₖ = sum(arr_fe_χ) / n;
     M = round(Int, n * vol);
     
-    Ju, Jγ, Jt = inline_Js()
-    J = Ju + Jγ + Jt
+    Ju, Je = inline_Js()
+    J = Ju + Je
     # -------------------------------------------------------------------------------------
 
     # ----------------------------------- log output -----------------------------------
@@ -196,7 +177,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         image_χ = TBImage(arr_fe_χ, WH)
         @info "domain" χ= image_χ log_step_increment=0
         @info "host" base=TBText(dict_info) log_step_increment=0
-        @info "energy" Ju= Ju Jγ= Jγ Jt= Jt J= J
+        @info "energy" Ju= Ju Je= Je J= J
     end
     # -------------------------------------------------------------------------------------
     
@@ -220,35 +201,19 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         copy!(arr_old_Φ, arr_fe_Φ);
 
         # ---- solve adjoint pde
-        pde_solve!(opc_Tˢ, Thˢ)
+        ushˢ = ush
         pde_solve!(opc_VPˢ, Xhˢ)
 
         # ---- saving data
         if i >= save_start && mod(i, save_iter) == 0
             if debug
-                _compute_node_value!(debug_Φ, ∇(Th)⋅∇(Thˢ), trian)
-                motion(arr_cache_Φ_1, debug_Φ)
-                symmetry!(debug_Φ, arr_cache_Φ_1)
-                __f = FEFunction(aux_space, debug_Φ.A)
                 c_fs = [
-                    "Th" => Th,
-                    "∇(Th)" => ∇(Th),
-                    "∇(Thˢ)" => ∇(Thˢ),
-                    "∇(Th)⋅∇(Thˢ)" => ∇(Th)⋅∇(Thˢ),
-                    "Gτ*(∇(Th)⋅∇(Thˢ))" => __f,
-                    "uh" => uh,
-                    "∇⋅uh" => divergence(uh), 
-                    "uh⋅uh" => uh⋅uh,
-                    "uh⋅uhˢ" => uh⋅uhˢ,
-                    "Thˢ" => Thˢ, 
-                    "uhˢ" => uhˢ, 
-                    "RHS_Vˢ" => ∇(Thˢ)*Re*Pr*Th,
-                    "Gτχ" => fe_Gτχ,
-                    "fe_Φ" => fe_Φ,
-                    "(kf - ks)*∇(Th)⋅∇(Thˢ)" => (kf - ks)*∇(Th)⋅∇(Thˢ),
-                    "(ks - kf)*((Ts - Th)*(Thˢ + β₃))" => (ks - kf)*((Ts - Th)*(Thˢ + β₃)),
-                    "-α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ)" => -α⁻ * (β₁/2*uh⋅uh + uh⋅uhˢ),
-                    ]
+                    "ufh" => ufh,
+                    "ufhˢ" => ufhˢ,
+                    "ush" => ush,
+                    "ushˢ" => ushˢ,
+                    "Gτχ" => fe_Gτχ
+                ]
             else
                 c_fs = cell_fields
             end
@@ -259,9 +224,6 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         ## base gradient of energy
         _compute_node_value!(arr_fe_Φ, fe_Φ, trian)
         motion(arr_cache_Φ_1, arr_fe_Φ)
-        ## perimeter of interface
-        _r = β₂ * sqrt(π / τ); @check_tau(_r);
-        @. arr_cache_Φ_1 += _r * (arr_fe_Gτχ₂ - arr_fe_Gτχ)
         ## post-processing for symmetry
         symmetry!(arr_fe_Φ, arr_cache_Φ_1; dims= 2)
 
@@ -286,7 +248,7 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         elseif _is_scheme(SCHEME_RAND_CORRECT)
             randperm!(Random.seed!(i), vec_idx)
             weight = arr_cache_Φ_2
-            weight[vec_idx] = 1. :length(weight)
+            weight[vec_idx] = 1. : length(weight)
         elseif _is_scheme(SCHEME_CORRECT_REV)
             weight = -arr_fe_Φ
         else
@@ -320,13 +282,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         end
         
         # ---- compute energy
-        smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
+        smooth_funcs!(arr_fe_χ, arr_fe_Gτχ, motion)
         ## solve pde with χ_{k+1} 
         pde_solve!(opc_VP, Xh)
-        pde_solve!(opc_T, Th)
+        pde_solve!(opc_E, ush)
         ## energy
-        Ju, Jγ, Jt = inline_Js()
-        Ji = Ju + Jγ + Jt
+        Ju, Je = inline_Js()
+        Ji = Ju + Je
 
         time_out = time() - time_out
         
@@ -347,13 +309,13 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
 
 
                 # ---- compute energy
-                smooth_funcs!(arr_fe_χ, arr_fe_χ₂, arr_fe_Gτχ, arr_fe_Gτχ₂, motion)
+                smooth_funcs!(arr_fe_χ, arr_fe_Gτχ, motion)
                 ## solve pde with χ_{k+1} 
                 pde_solve!(opc_VP, Xh)
-                pde_solve!(opc_T, Th)
+                pde_solve!(opc_E, ush)
                 ## energy
-                Ju, Jγ, Jt = inline_Js()
-                Ji = Ju + Jγ + Jt
+                Ju, Je = inline_Js()
+                Ji = Ju + Je
             end
         end
 
@@ -369,10 +331,10 @@ function singlerun(config, vtk_file_prefix, vtk_file_pvd, tb_lg, run_i; debug= f
         curϵ = norm(arr_fe_χ - arr_old_χ, 2)
 
         τ = get_tau(motion)
-        debug && @info "run_$(run_i): E = $Ji, τ = $(τ), cur_ϵ= $(curϵ), β₂ = $β₂, in_iter= $n_in_iter"
+        debug && @info "run_$(run_i): E = $Ji, τ = $(τ), cur_ϵ= $(curϵ), in_iter= $n_in_iter"
         with_logger(tb_lg) do 
             image_χ = TBImage(arr_fe_χ, WH)
-            @info "energy" Ju= Ju Jγ= Jγ Jt= Jt J= Ji
+            @info "energy" Ju= Ju Je= Je J= Ji
             @info "domain" χ= image_χ log_step_increment=0
             @info "parameters" τ= τ  ϵ= curϵ rand_rate=rand_rate log_step_increment=0
             @info "count" in_iter= n_in_iter in_time= time_in out_time= time_out volₖ= volₖ M= M log_step_increment=0

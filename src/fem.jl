@@ -125,6 +125,10 @@ function smooth_funcs!(arr_χ, arr_χ₂, arr_Gτχ, arr_Gτχ₂, motion)
     motion(arr_Gτχ₂, arr_χ₂)
     return nothing
 end
+function smooth_funcs!(arr_χ, arr_Gτχ, motion) 
+    motion(arr_Gτχ, arr_χ)
+    return nothing
+end
 
 """
     pde_solve!(opc::LinearOpWithCache, fe_func)

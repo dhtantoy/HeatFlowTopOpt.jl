@@ -6,6 +6,7 @@ using Distributed
 
 using Random
 using LinearAlgebra
+using LinearAlgebra: tr
 using JLD2
 import TOML
 using Logging
